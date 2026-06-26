@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.1</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3538,14 +3538,13 @@ const STORE_SECTIONS = {
 let SERVER_DATA = null;
 async function storeInitAll(){
   if (!storeConfigured()) return;
-  try {
-    SERVER_DATA = await storeLoad(true);
-    // Әр бөлімге сервер айларын құю (тірі жүктемеген айлар да көрінсін)
-    storeMergeIntoSections();
-    // Қайта рендер
-    ['pro','sch','act','psy','ref'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){} });
-    if (typeof conRender==='function') conRender();
-  } catch(e){ console.warn('Сервер жүктелмеді:', e.message); }
+  // storeLoad қатесін лақтыруға рұқсат (storeRefresh нақты себепті көрсетеді)
+  SERVER_DATA = await storeLoad(true);
+  // Әр бөлімге сервер айларын құю (тірі жүктемеген айлар да көрінсін)
+  storeMergeIntoSections();
+  // Қайта рендер
+  ['pro','sch','act','psy','ref'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
+  if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
 }
 
 // Сервердегі агрегаттарды бөлімдердің months объектісіне «синтетикалық» түрде қосу
@@ -3659,7 +3658,14 @@ async function storeRefresh(sec){
   storeFlash(sec, '⏳ Жүктелуде...');
   try {
     await storeInitAll();
-    storeFlash(sec, '✅ Жаңартылды — серверде '+_countServerRows()+' жазба');
+    const total = _countServerRows();
+    const cfg = STORE_SECTIONS[sec];
+    const secN = (cfg && SERVER_DATA && Array.isArray(SERVER_DATA[cfg.server])) ? SERVER_DATA[cfg.server].length : 0;
+    if (total===0){
+      storeFlash(sec, '⚠️ Сервер жауап берді, бірақ ешқандай жазба жоқ. Бэкенд жаңартылмаған болуы мүмкін (қайта deploy керек) немесе деректер басқа кестеде.', true);
+    } else {
+      storeFlash(sec, '✅ Жаңартылды — барлығы '+total+' жазба, бұл бөлімде '+secN+' ай');
+    }
   } catch(e){
     storeFlash(sec, '❌ '+e.message, true);
   }
@@ -4377,7 +4383,17 @@ document.addEventListener('DOMContentLoaded', function(){
   if (typeof conInit==='function'){ conInit(); conRender(); }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
   ['pro','sch','act','psy','ref'].forEach(function(sec){ var fn=window[sec+'Render']; if(fn) try{fn();}catch(e){} });
-  if (typeof storeInitAll==='function'){ setTimeout(storeInitAll, 300); }
+  if (typeof storeInitAll==='function'){
+    setTimeout(function(){
+      storeInitAll().catch(function(e){
+        // Автожүктеу сәтсіз — барлық бөлім панеліне көрсету
+        ['pro','sch','act','psy','ref'].forEach(function(sec){
+          if (typeof storeFlash==='function') storeFlash(sec, '❌ Сервер жүктелмеді: '+e.message, true);
+        });
+        console.error('storeInitAll:', e);
+      });
+    }, 300);
+  }
 });
 </script>
 </body>
