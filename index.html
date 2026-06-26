@@ -3212,11 +3212,26 @@ function ayEl(id){ return document.getElementById(id); }
    ИИН/аты-жөн/диагноз/мекенжай ЕШҚАШАН жіберілмейді.
    ============================================================ */
 
+/* Баптауды сақтаудың сенімді тізбегі: localStorage → cookie (file:// үшін) */
+function _storeGet(key){
+  try { const v=localStorage.getItem(key); if(v!==null) return v; } catch(e){}
+  try {
+    const m=document.cookie.match(new RegExp('(?:^|; )'+key+'=([^;]*)'));
+    if(m) return decodeURIComponent(m[1]);
+  } catch(e){}
+  return null;
+}
+function _storeSet(key,val){
+  let ok=false;
+  try { localStorage.setItem(key,val); if(localStorage.getItem(key)===val) ok=true; } catch(e){}
+  try { document.cookie=key+'='+encodeURIComponent(val)+'; max-age=31536000; path=/'; ok=true; } catch(e){}
+  return ok;
+}
 const STORE = {
   // ← Apps Script /exec URL-ін осында қой
-  apiUrl: localStorage.getItem('ayan_econ_api') || '',
-  token: localStorage.getItem('ayan_econ_token') || '',
-  user: localStorage.getItem('ayan_econ_user') || 'admin',
+  apiUrl: _storeGet('ayan_econ_api') || '',
+  token: _storeGet('ayan_econ_token') || '',
+  user: _storeGet('ayan_econ_user') || 'admin',
   cache: null,        // серверден жүктелген барлық дерек
   loaded: false,
 };
@@ -3266,9 +3281,17 @@ async function storeLoad(force){
   if (!storeConfigured()) return null;
   if (STORE.loaded && !force) return STORE.cache;
   const url = STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=load';
-  const res = await fetch(url);
-  const j = await res.json();
-  if (!j.ok) throw new Error('Жүктеу қатесі: '+(j.error||''));
+  const res = await fetch(url, {redirect:'follow'});
+  const txt = await res.text();
+  let j;
+  try { j = JSON.parse(txt); }
+  catch(e){
+    // Apps Script JSON емес (HTML/редирект) қайтарды — нақты себеп
+    if (txt.includes('<!DOCTYPE') || txt.includes('<html'))
+      throw new Error('Сервер HTML қайтарды (JSON емес). Себебі: Web App «Anyone» рұқсатымен deploy жасалмаған НЕМЕСЕ URL дұрыс емес. Apps Script-те Deploy → Manage deployments → Edit → "Who has access: Anyone" екенін тексер.');
+    throw new Error('Жауап оқылмады: '+txt.slice(0,100));
+  }
+  if (!j.ok) throw new Error('Жүктеу қатесі: '+(j.error||JSON.stringify(j)));
   STORE.cache = j.data; STORE.loaded = true;
   return j.data;
 }
@@ -3276,8 +3299,14 @@ async function storeLoad(force){
 async function storePing(){
   if (!storeConfigured()) return {ok:false, error:'no_url'};
   try {
-    const res = await fetch(STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=ping');
-    return await res.json();
+    const res = await fetch(STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=ping', {redirect:'follow'});
+    const txt = await res.text();
+    try { return JSON.parse(txt); }
+    catch(e){
+      if (txt.includes('<!DOCTYPE') || txt.includes('<html'))
+        return {ok:false, error:'HTML қайтты — "Who has access: Anyone" емес немесе URL қате'};
+      return {ok:false, error:'JSON емес: '+txt.slice(0,60)};
+    }
   } catch(e){ return {ok:false, error:String(e)}; }
 }
 
@@ -3524,28 +3553,46 @@ function storeMergeIntoSections(){
   if (!SERVER_DATA) return;
   // PRO
   (SERVER_DATA.econ_protocol||[]).forEach(row=>{
-    const k=row.period; if(!k) return;
+    const k=_normPeriod(row.period); if(!k) return;
+    row.period=k; // нормаланғанын кері жаз
     if (!PRO.months[k]){ PRO.months[k]=_protoFromAgg(row); PRO.months[k]._fromServer=true; }
   });
   (SERVER_DATA.econ_schet||[]).forEach(row=>{
-    const k=row.period; if(!k) return;
+    const k=_normPeriod(row.period); if(!k) return;
+    row.period=k;
     if (!SCH.months[k]){ SCH.months[k]=_schetFromAgg(row); SCH.months[k]._fromServer=true; }
   });
   (SERVER_DATA.econ_akt||[]).forEach(row=>{
-    const k=row.period; if(!k) return;
+    const k=_normPeriod(row.period); if(!k) return;
+    row.period=k;
     if (!ACT.months[k]){ ACT.months[k]={type:'akt',period:_pk(k),totalToPay:+row.to_pay||0,totalAvans:+row.avans||0,rows:[],_fromServer:true}; }
   });
   // PSY/REF — агрегаттан «псевдо-month» (рендер агрегаттан оқиды)
   (SERVER_DATA.audit_psy||[]).forEach(row=>{
-    const k=row.period; if(!k||PSY.months[k]) return;
+    const k=_normPeriod(row.period); if(!k) return;
+    row.period=k;
+    if(PSY.months[k]) return;
     PSY.months[k]={_agg:row, _fromServer:true};
   });
   (SERVER_DATA.audit_ref||[]).forEach(row=>{
-    const k=row.period; if(!k||REF.months[k]) return;
+    const k=_normPeriod(row.period); if(!k) return;
+    row.period=k;
+    if(REF.months[k]) return;
     REF.months[k]={_agg:row, _fromServer:true};
   });
 }
-function _pk(key){ return {y:+key.slice(0,4), m:+key.slice(5)}; }
+// Period қандай форматта болса да (Date, ISO, "2026-01", "2026-01-01") → "2026-01"
+function _normPeriod(p){
+  if (p === null || p === undefined || p === '') return '';
+  if (p instanceof Date) return p.getFullYear()+'-'+String(p.getMonth()+1).padStart(2,'0');
+  const s = String(p);
+  const m = s.match(/(\d{4})-(\d{2})/);
+  if (m) return m[1]+'-'+m[2];
+  // "01.2026" немесе басқа форматтар
+  const m2 = s.match(/(\d{4})/);
+  return m2 ? s : '';
+}
+function _pk(key){ const n=_normPeriod(key); return {y:+n.slice(0,4), m:+n.slice(5)}; }
 function _protoFromAgg(row){
   return { type:'protokol', period:_pk(row.period), contract:row.contract||'',
     totalPred:+row.pred||0, totalAcc:+row.acc||0, cutTotal:+row.cut||0, other:+row.oth||0,
@@ -3581,16 +3628,24 @@ function storeFlash(sec, msg, isErr){
   const el = document.getElementById(sec+'StoreFlash');
   if (!el) return;
   el.innerHTML = `<span style="color:${isErr?'#dc2626':'#15803d'};font-size:12px">${msg}</span>`;
-  setTimeout(()=>{ if(el) el.innerHTML=''; }, 5000);
+  setTimeout(()=>{ if(el) el.innerHTML=''; }, 12000);
 }
 
 /* ---- Сервер статус-панелі (әр бөлім басына) ---- */
 function storePanel(sec){
   const cfg = STORE_SECTIONS[sec];
   const on = storeConfigured();
+  // Осы бөлім үшін серверде қанша ай сақталған
+  let serverInfo = '';
+  if (on && cfg && SERVER_DATA && Array.isArray(SERVER_DATA[cfg.server])){
+    const n = SERVER_DATA[cfg.server].length;
+    serverInfo = ` · серверде <strong>${n}</strong> ай сақталған`;
+  } else if (on && (!SERVER_DATA)){
+    serverInfo = ` · <span style="color:#b45309">дерек әлі жүктелмеді (🔄 Жаңарту бас)</span>`;
+  }
   return `<div class="card" style="border-color:${on?'#bbf7d0':'#fde68a'}">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div style="font-size:13px">${on?'☁️ <strong>Серверлі салыстыру қосулы</strong> — жүктеген файлдар бұрынғылармен автоматты салыстырылады':'⚙️ <strong>Сервер бапталмаған</strong> — деректі сақтау үшін баптау керек'}</div>
+      <div style="font-size:13px">${on?'☁️ <strong>Серверлі салыстыру қосулы</strong>'+serverInfo:'⚙️ <strong>Сервер бапталмаған</strong> — деректі сақтау үшін баптау керек'}</div>
       <div>
         <span id="${sec}StoreFlash"></span>
         <button class="icon-btn" onclick="storeOpenConfig()" style="font-size:12px">${on?'⚙️ Баптау':'🔌 Серверге қосылу'}</button>
@@ -3601,8 +3656,13 @@ function storePanel(sec){
 }
 
 async function storeRefresh(sec){
-  await storeInitAll();
-  storeFlash(sec, '🔄 Сервер дерегі жаңартылды');
+  storeFlash(sec, '⏳ Жүктелуде...');
+  try {
+    await storeInitAll();
+    storeFlash(sec, '✅ Жаңартылды — серверде '+_countServerRows()+' жазба');
+  } catch(e){
+    storeFlash(sec, '❌ '+e.message, true);
+  }
 }
 
 /* ---- Баптау модалы ---- */
@@ -3645,15 +3705,34 @@ async function storeTestConfig(){
                         : '<span style="color:#dc2626">❌ '+(j.error||'қате')+'</span>';
   } catch(e){ st.innerHTML='<span style="color:#dc2626">❌ Қосылым жоқ: '+e.message+'</span>'; }
 }
-function storeSaveConfig(){
+async function storeSaveConfig(){
   STORE.apiUrl=document.getElementById('cfgUrl').value.trim();
   STORE.token=document.getElementById('cfgToken').value.trim();
   STORE.user=document.getElementById('cfgUser').value.trim()||'admin';
-  localStorage.setItem('ayan_econ_api', STORE.apiUrl);
-  localStorage.setItem('ayan_econ_token', STORE.token);
-  localStorage.setItem('ayan_econ_user', STORE.user);
-  document.getElementById('storeConfigModal').style.display='none';
-  storeInitAll();
+  let saved=true;
+  try {
+    saved = _storeSet('ayan_econ_api', STORE.apiUrl)
+          && _storeSet('ayan_econ_token', STORE.token)
+          && _storeSet('ayan_econ_user', STORE.user);
+  } catch(e){ saved=false; }
+  const st=document.getElementById('cfgStatus');
+  if (!saved && st){
+    st.innerHTML='<span style="color:#dc2626">⚠️ Браузер баптауды сақтай алмады (localStorage өшірулі болуы мүмкін). Бұл «private/incognito» режимде немесе file:// ашқанда болады. Қосылым осы сессияда жұмыс істейді, бірақ бетті жапсаң қайта енгізу керек.</span>';
+  }
+  // Серверден деректі тарт + барлық бөлімді жаңарт
+  if (st) st.innerHTML += '<div style="margin-top:6px">⏳ Сервер дерегі жүктелуде...</div>';
+  try {
+    await storeInitAll();
+    if (st) st.innerHTML = '<span style="color:#15803d">✅ Қосылды әрі дерек жүктелді ('+_countServerRows()+' жазба). Терезені жабуға болады.</span>';
+    setTimeout(()=>{ const m=document.getElementById('storeConfigModal'); if(m) m.style.display='none'; }, 1500);
+  } catch(e){
+    if (st) st.innerHTML = '<span style="color:#dc2626">❌ Дерек жүктелмеді: '+e.message+'</span>';
+  }
+}
+function _countServerRows(){
+  if (!SERVER_DATA) return 0;
+  let n=0; for (const k in SERVER_DATA){ if (Array.isArray(SERVER_DATA[k])) n+=SERVER_DATA[k].length; }
+  return n;
 }
 
 /* ============================================================
@@ -4058,6 +4137,26 @@ function conRender(){
   // Жылдық сома + ГОБМП/ОСМС график
   html += `<div class="card"><div class="card-title">Жылдық жоспар динамикасы</div><canvas id="conTotal" height="100"></canvas></div>`;
 
+  // ── АЙЛЫҚ САЛЫСТЫРУ (2+ жыл) ──
+  if (yrs.length>1){
+    html += `<div class="card"><div class="card-title">📊 Айлық жоспар салыстыруы — барлық бағыт Σ</div><canvas id="conMonthCmp" height="110"></canvas></div>`;
+    html += `<div class="card"><div class="card-title">📈 Жинақталған (кумулятивті) жоспар</div><canvas id="conCumul" height="110"></canvas></div>`;
+    // Айлық бөлініс кестесі
+    const mSumByYear = {};
+    yrs.forEach(y=>{ const a=Array(12).fill(0); CON.years[y].lines.forEach(L=>(L.sum||[]).forEach((v,i)=>a[i]+=v||0)); mSumByYear[y]=a; });
+    html += `<div class="card"><div class="card-title">Ай сайынғы жоспар (сома, тг)</div><div style="overflow-x:auto"><table><tr><th>Ай</th>${yrs.map(y=>'<th>'+y+'</th>').join('')}${yrs.length===2?'<th>Δ</th><th>Δ%</th>':''}</tr>`;
+    for (let m=0;m<12;m++){
+      const vals = yrs.map(y=>mSumByYear[y][m]);
+      let extra='';
+      if (yrs.length===2){ const d=vals[1]-vals[0]; const pct=vals[0]?100*d/vals[0]:null; extra=`<td style="color:${d>=0?'#15803d':'#dc2626'}">${d>=0?'+':''}${ayFmt(Math.round(d))}</td><td style="color:${d>=0?'#15803d':'#dc2626'}">${pct===null?'—':(d>=0?'+':'')+pct.toFixed(0)+'%'}</td>`; }
+      html += `<tr><td><strong>${AY_MONTH_KZ[m+1]}</strong></td>${vals.map(v=>'<td>'+ayFmt(Math.round(v))+'</td>').join('')}${extra}</tr>`;
+    }
+    const totByYear = yrs.map(y=>mSumByYear[y].reduce((a,b)=>a+b,0));
+    let totExtra='';
+    if (yrs.length===2){ const d=totByYear[1]-totByYear[0]; const pct=totByYear[0]?100*d/totByYear[0]:null; totExtra=`<td><strong>${d>=0?'+':''}${ayFmt(Math.round(d))}</strong></td><td><strong>${pct===null?'—':(d>=0?'+':'')+pct.toFixed(0)+'%'}</strong></td>`; }
+    html += `<tr style="background:#f5f5f4"><td><strong>Σ жыл</strong></td>${totByYear.map(v=>'<td><strong>'+ayFmt(Math.round(v))+'</strong></td>').join('')}${totExtra}</tr></table></div></div>`;
+  }
+
   // Бағыт бойынша салыстыру кестесі
   const allKeys = {};
   yrs.forEach(y=> CON.years[y].lines.forEach(L=>{ allKeys[L.key]=L.name; }));
@@ -4108,6 +4207,14 @@ function conRender(){
     {label:'ГОБМП', data:yrs.map(y=>CON.years[y].gobmp||0), backgroundColor:'#2563eb'},
     {label:'ОСМС', data:yrs.map(y=>CON.years[y].osms||0), backgroundColor:'#16a34a'}]},
     options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
+  if (yrs.length>1){
+    // Айлық қатарлас баған
+    const dsM = yrs.map((y,i)=>{ const a=Array(12).fill(0); CON.years[y].lines.forEach(L=>(L.sum||[]).forEach((v,j)=>a[j]+=v||0)); return {label:y, data:a, backgroundColor:CMP_PALETTE[i%CMP_PALETTE.length]}; });
+    cmpChart('con','conMonthCmp',{type:'bar', data:{labels:AY_MONTH_KZ.slice(1).map(m=>m.slice(0,3)), datasets:dsM}, options:{plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
+    // Кумулятивті сызық
+    const dsC = yrs.map((y,i)=>{ const a=Array(12).fill(0); CON.years[y].lines.forEach(L=>(L.sum||[]).forEach((v,j)=>a[j]+=v||0)); let run=0; const cum=a.map(v=>run+=v); return {label:y, data:cum, borderColor:CMP_PALETTE[i%CMP_PALETTE.length], backgroundColor:'transparent', tension:.2}; });
+    cmpChart('con','conCumul',{type:'line', data:{labels:AY_MONTH_KZ.slice(1).map(m=>m.slice(0,3)), datasets:dsC}, options:{plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
+  }
   if (yrs.length===1){
     const c=CON.years[yrs[0]];
     const mSum=Array(12).fill(0); c.lines.forEach(L=>L.sum.forEach((v,i)=>mSum[i]+=v||0));
