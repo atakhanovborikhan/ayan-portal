@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.1</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.2</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3241,11 +3241,15 @@ function storeConfigured(){ return !!STORE.apiUrl; }
 /* ---- Пациент дерегін тазалау: агрегатта ИИН/ФИО/диагноз болмауы тиіс ---- */
 const STORE_FORBIDDEN = /иин|iin|фио|fio|пациент|patient|диагноз|diagnos|адрес|мекенжай|address|birth|dob|телефон|phone/i;
 function storeAssertClean(obj, path){
+  // Тек payload түбіріндегі ӨРІС АТАУЛАРЫН тексереміз (iin, fio, диагноз сияқты).
+  // _json өрістері — агрегат-объект, олардың ішіндегі мекеме/повод/қызмет АТАУЛАРЫ — дерек мәні,
+  // оларды тексермейміз (әйтпесе "повод обращения" мәтініндегі сөз жалған бұғаттау береді).
   path = path || '';
   if (obj===null || typeof obj!=='object') return;
   for (const k in obj){
+    if (String(k).indexOf('_json') >= 0) continue; // агрегат-объект, ішін тексермейміз
     if (STORE_FORBIDDEN.test(k)) throw new Error('Қауіпсіздік: «'+k+'» өрісі серверге жіберілмейді ('+path+')');
-    if (typeof obj[k]==='object') storeAssertClean(obj[k], path+'.'+k);
+    // тек түбір деңгей — тереңге кірмейміз
   }
 }
 
@@ -3615,11 +3619,24 @@ async function storeAutoSaveDoc(sec, doc){
   catch(e){ storeFlash(sec, '⚠️ Сақталмады: '+e.message, true); }
 }
 async function storeAutoSaveXlsx(sec, key, monthData){
-  if (!storeConfigured()) return;
-  const cfg = STORE_SECTIONS[sec]; if (!cfg) return;
+  if (!storeConfigured()) return {ok:null};
+  const cfg = STORE_SECTIONS[sec]; if (!cfg) return {ok:null};
   const payload = sec==='psy' ? aggPsy(monthData, key) : aggRef(monthData, key);
-  try { await storeSave(cfg.server, payload); storeFlash(sec, '☁️ '+cmpMonLabel(key)+' серверге сақталды'); }
-  catch(e){ storeFlash(sec, '⚠️ Сақталмады: '+e.message, true); }
+  try { await storeSave(cfg.server, payload); return {ok:true, key}; }
+  catch(e){ return {ok:false, key, err:e.message}; }
+}
+// Сақтау қорытындысын рендерден КЕЙІН көрсету (рендер storeFlash-ты өшірмесін)
+window._saveResultsGlobal = {};
+function _flashSaveSummary(sec){
+  const results = window._saveResultsGlobal[sec] || [];
+  if (!results.length) return;
+  const ok = results.filter(r=>r && r.ok===true).length;
+  const fail = results.filter(r=>r && r.ok===false);
+  let msg;
+  if (fail.length===0 && ok>0) msg = '☁️ '+ok+' ай серверге сақталды';
+  else if (fail.length>0) msg = '⚠️ '+ok+' сақталды, '+fail.length+' сәтсіз: '+fail[0].err;
+  else msg = '';
+  if (msg) setTimeout(()=>storeFlash(sec, msg, fail.length>0), 50);
 }
 
 // Қысқа хабарлама
@@ -3786,6 +3803,7 @@ if (typeof module!=='undefined') module.exports = {trendPanel, STORE_SECTIONS};
 const REF = { months:{}, log:[] };  // months: {'YYYY-MM': {rows, header, idx}}
 
 async function refHandle(files){
+  const _saveResults=[];
   for (const f of files){
     try {
       const {rows, period, fname} = await cmpReadXlsx(f);
@@ -3799,10 +3817,12 @@ async function refHandle(files){
       const data = rows.slice(2).filter(r=>r && r.some(c=>c!==null&&c!==''));
       REF.months[key] = {data, header};
       REF.log.push({name:fname, ok:true, info:'Сыртқы бағыттар · '+cmpMonLabel(key)+' · '+ayFmt(data.length)+' жазба'});
-      if (typeof storeAutoSaveXlsx==='function') await storeAutoSaveXlsx('ref', key, REF.months[key]);
+      if (typeof storeAutoSaveXlsx==='function'){ const r=await storeAutoSaveXlsx('ref', key, REF.months[key]); _saveResults.push(r); }
     } catch(e){ REF.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
+  window._saveResultsGlobal['ref']=_saveResults;
   refRender();
+  _flashSaveSummary('ref');
 }
 function refClear(){ REF.months={}; REF.log=[]; cmpClearCharts('ref'); cmpEl('refReport').innerHTML=''; cmpEl('refFiles').value=''; }
 
@@ -3942,6 +3962,7 @@ function refRender(){
 const PSY = { months:{}, log:[] };
 
 async function psyHandle(files){
+  const _saveResults=[];
   for (const f of files){
     try {
       const {rows, period, fname} = await cmpReadXlsx(f);
@@ -3955,10 +3976,12 @@ async function psyHandle(files){
       const data = rows.slice(2).filter(r=>r && r.some(c=>c!==null&&c!==''));
       PSY.months[key] = {data, header};
       PSY.log.push({name:fname, ok:true, info:'Төлем жүйесі · '+cmpMonLabel(key)+' · '+ayFmt(data.length)+' жазба'});
-      if (typeof storeAutoSaveXlsx==='function') await storeAutoSaveXlsx('psy', key, PSY.months[key]);
+      if (typeof storeAutoSaveXlsx==='function'){ const r=await storeAutoSaveXlsx('psy', key, PSY.months[key]); _saveResults.push(r); }
     } catch(e){ PSY.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
+  window._saveResultsGlobal['psy']=_saveResults;
   psyRender();
+  _flashSaveSummary('psy');
 }
 function psyClear(){ PSY.months={}; PSY.log=[]; cmpClearCharts('psy'); cmpEl('psyReport').innerHTML=''; cmpEl('psyFiles').value=''; }
 
