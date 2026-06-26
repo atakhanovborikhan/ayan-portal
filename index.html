@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.3</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -2235,7 +2235,9 @@ const UCH_COLORS = {
 
 // API URL-ды localStorage-да сақтаймыз
 function censusGetApiUrl() {
-  return localStorage.getItem('ayan_api_url') || '';
+  // Әдепкі скрипт сілтемесі (localStorage басым — пайдаланушы өзгертсе, сол сақталады)
+  const DEFAULT_CENSUS_API = 'https://script.google.com/macros/s/AKfycbwmQIoCGzvhlDUbzJsf3VrDKmGE3FUSmamZcJUrjc75A8-k2R1ZPidC99eLtN0zaE0sKg/exec';
+  return localStorage.getItem('ayan_api_url') || DEFAULT_CENSUS_API;
 }
 
 function censusGetTgId() {
