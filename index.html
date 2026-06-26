@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.2</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.3</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3212,6 +3212,22 @@ function ayEl(id){ return document.getElementById(id); }
    ИИН/аты-жөн/диагноз/мекенжай ЕШҚАШАН жіберілмейді.
    ============================================================ */
 
+/* Timeout-пен fetch — сервер жауап бермесе, мәңгі қатпайды */
+async function _fetchTimeout(url, opts, ms){
+  ms = ms || 15000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, Object.assign({}, opts, {signal: ctrl.signal}));
+    clearTimeout(timer);
+    return res;
+  } catch(e){
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Сервер '+(ms/1000)+' секундта жауап бермеді (timeout). Интернет немесе Apps Script баяу болуы мүмкін. Қайта көріңіз.');
+    throw e;
+  }
+}
+
 /* Баптауды сақтаудың сенімді тізбегі: localStorage → cookie (file:// үшін) */
 function _storeGet(key){
   try { const v=localStorage.getItem(key); if(v!==null) return v; } catch(e){}
@@ -3259,8 +3275,8 @@ async function storeSave(section, payload){
   storeAssertClean(payload, section); // соңғы қорғаныс
   payload.uploaded_by = STORE.user;
   payload.uploaded_at = new Date().toISOString();
-  const res = await fetch(STORE.apiUrl, {
-    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, // Apps Script preflight-сыз
+  const res = await _fetchTimeout(STORE.apiUrl, {
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({token:STORE.token, action:'save', section, payload})
   });
   const j = await res.json();
@@ -3271,7 +3287,7 @@ async function storeSave(section, payload){
 
 async function storeDelete(section, period){
   if (!storeConfigured()) throw new Error('Сервер бапталмаған');
-  const res = await fetch(STORE.apiUrl, {
+  const res = await _fetchTimeout(STORE.apiUrl, {
     method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({token:STORE.token, action:'delete', section, period, uploaded_by:STORE.user})
   });
@@ -3285,7 +3301,7 @@ async function storeLoad(force){
   if (!storeConfigured()) return null;
   if (STORE.loaded && !force) return STORE.cache;
   const url = STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=load';
-  const res = await fetch(url, {redirect:'follow'});
+  const res = await _fetchTimeout(url, {redirect:'follow'});
   const txt = await res.text();
   let j;
   try { j = JSON.parse(txt); }
@@ -3303,7 +3319,7 @@ async function storeLoad(force){
 async function storePing(){
   if (!storeConfigured()) return {ok:false, error:'no_url'};
   try {
-    const res = await fetch(STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=ping', {redirect:'follow'});
+    const res = await _fetchTimeout(STORE.apiUrl + '?token=' + encodeURIComponent(STORE.token) + '&action=ping', {redirect:'follow'}, 10000);
     const txt = await res.text();
     try { return JSON.parse(txt); }
     catch(e){
@@ -3317,6 +3333,16 @@ async function storePing(){
 /* ============================================================
    АГРЕГАТ ШЫҒАРУ — әр дерек түрінен (пациент-деңгейсіз)
    ============================================================ */
+
+// Шарт агрегаты (жыл серверге сақталады, period=жыл)
+function aggContract(yearObj, year){
+  return {
+    period: String(year),  // шарт үшін period = жыл
+    contract: yearObj.contract||'', year: +year,
+    total: yearObj.total||0, gobmp: yearObj.gobmp||0, osms: yearObj.osms||0,
+    lines_json: (yearObj.lines||[]).map(L=>({key:L.key, name:L.name, unit:L.unit, annualSum:L.annualSum, annualQty:L.annualQty, sum:L.sum, qty:L.qty}))
+  };
+}
 
 function aggProtocol(doc){
   return {
@@ -3531,6 +3557,7 @@ function cmpStatusPanel(log, mismatchNote){
 
 // Бөлім конфигурациясы: қай дерек, қай агрегат, қай сервер-парақ
 const STORE_SECTIONS = {
+  con: { server:'econ_contract', label:'Шарт', kind:'contract' },
   pro: { server:'econ_protocol', label:'Протокол', kind:'doc' },
   sch: { server:'econ_schet',    label:'Счет-реестр', kind:'doc' },
   act: { server:'econ_akt',      label:'Акт', kind:'doc' },
@@ -3548,6 +3575,7 @@ async function storeInitAll(){
   storeMergeIntoSections();
   // Қайта рендер
   ['pro','sch','act','psy','ref'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
+  if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
 }
 
@@ -3582,6 +3610,14 @@ function storeMergeIntoSections(){
     row.period=k;
     if(REF.months[k]) return;
     REF.months[k]={_agg:row, _fromServer:true};
+  });
+  // Шарттар (period = жыл)
+  (SERVER_DATA.econ_contract||[]).forEach(row=>{
+    const yr = String(row.year || row.period || '').slice(0,4);
+    if(!yr || yr==='') return;
+    if (typeof CON!=='undefined' && !CON.years[yr]){
+      CON.years[yr] = { contract:row.contract||'', year:+yr, total:+row.total||0, gobmp:+row.gobmp||0, osms:+row.osms||0, lines: row.lines_json||[], _fromServer:true };
+    }
   });
 }
 // Period қандай форматта болса да (Date, ISO, "2026-01", "2026-01-01") → "2026-01"
@@ -3722,7 +3758,7 @@ async function storeTestConfig(){
   const st=document.getElementById('cfgStatus');
   st.innerHTML='⏳ Тексеру...';
   try {
-    const res=await fetch(url+'?token='+encodeURIComponent(token)+'&action=ping');
+    const res=await _fetchTimeout(url+'?token='+encodeURIComponent(token)+'&action=ping', {}, 10000);
     const j=await res.json();
     st.innerHTML = j.ok ? '<span style="color:#15803d">✅ Қосылым сәтті! Парақтар: '+(j.sheets||[]).join(', ')+'</span>'
                         : '<span style="color:#dc2626">❌ '+(j.error||'қате')+'</span>';
@@ -4119,6 +4155,7 @@ function aymPlanToYear(plan){
 }
 
 async function conHandle(files){
+  const _conSaved=[];
   for (const f of files){
     try {
       const ext = (f.name.split('.').pop()||'').toLowerCase();
@@ -4128,12 +4165,20 @@ async function conHandle(files){
         const yr = String(obj.year || (obj.contract||'').match(/\d{4}/)?.[0] || '?');
         CON.years[yr] = obj;
         CON.log.push({name:f.name, ok:true, info:yr+' жыл · '+(obj.lines?obj.lines.length:0)+' бағыт'});
+        // Серверге сақтау
+        if (typeof storeConfigured==='function' && storeConfigured() && typeof aggContract==='function'){
+          try { await storeSave('econ_contract', aggContract(obj, yr)); _conSaved.push({ok:true, yr}); }
+          catch(e){ _conSaved.push({ok:false, yr, err:e.message}); }
+        }
       } else {
         CON.log.push({name:f.name, ok:false, info:'Шарт PDF-і суреттерден тұрады — машинамен оқылмайды. 2026 тігілген; басқа жылды JSON шаблонымен қос (төмендегі батырма).'});
       }
     } catch(e){ CON.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
+  window._saveResultsGlobal = window._saveResultsGlobal||{};
+  window._saveResultsGlobal['con'] = _conSaved.map(r=>({ok:r.ok, key:r.yr, err:r.err}));
   conRender();
+  if (typeof _flashSaveSummary==='function') _flashSaveSummary('con');
 }
 function conClear(){ CON.years={}; CON.log=[]; cmpClearCharts('con'); conInit(); conRender(); }
 
@@ -4150,7 +4195,7 @@ function conRender(){
   conInit();
   cmpClearCharts('con');
   const box = cmpEl('conReport');
-  let html = cmpStatusPanel(CON.log);
+  let html = (typeof storePanel==="function"?storePanel("con"):"") + cmpStatusPanel(CON.log);
   html += `<div style="margin:-6px 0 14px"><button class="icon-btn" onclick="conExportTemplate()">📥 Басқа жыл үшін JSON-шаблон жүктеу</button>
     <span style="font-size:12px;color:var(--ink-2);margin-left:8px">Шаблонды толтырып қайта жүкте — жылдар автоматты салыстырылады.</span></div>`;
 
