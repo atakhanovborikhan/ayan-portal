@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v11.6</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.1</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -618,6 +618,8 @@
     <button class="tab" data-tab="sch">🧾 Счет-реестр</button>
     <button class="tab" data-tab="pro">📋 Протоколдар</button>
     <button class="tab" data-tab="act">📑 Актілер</button>
+    <button class="tab" data-tab="prof">🩺 Профилактика</button>
+    <button class="tab" data-tab="work">📊 Жүктеме</button>
     <button class="tab" data-tab="doctors">👨‍⚕️ Дәрігерлер</button>
     <button class="tab" data-tab="errors">⚠️ Қателер</button>
     <button class="tab" data-tab="rec">💡 Кеңестер</button>
@@ -1101,6 +1103,28 @@
       <button class="icon-btn" style="margin-left:8px" onclick="refClear()">🗑 Тазалау</button>
     </div>
     <div id="refReport"></div>
+  </section>
+
+  <section class="section" id="prof">
+    <div class="section-head"><h1 class="section-title">Профилактика / Д-есеп мониторингі</h1>
+      <div class="section-sub">«Д-учет без онкологии» айлық выгрузкаларын жүкте. Учаске бойынша: қай учаскеде қанша науқас, 65+, ЖФВ, повод-кодтау сәйкестігі. Мейіргерге басымдық — санмен, пациент атынсыз (нақты тізім ДамуМедте).</div></div>
+    <div class="card">
+      <div class="card-title">📂 «Д-учет без онкологии» файлдарын жүктеу (айлық)</div>
+      <input type="file" id="profFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="profClear()">🗑 Тазалау</button>
+    </div>
+    <div id="profReport"></div>
+  </section>
+
+  <section class="section" id="work">
+    <div class="section-head"><h1 class="section-title">Жүктеме мен белсенділік</h1>
+      <div class="section-sub">Форма 39 (визит белсенділігі: профилактика/ауру/үй) және «Прием по записи» (дәрігер қабылдауы) файлдарын жүкте. Түрі автоматты анықталады. Агрегат — пациент дерегі жоқ.</div></div>
+    <div class="card">
+      <div class="card-title">📂 Файлдарды жүктеу (Форма 39 не Прием по записи)</div>
+      <input type="file" id="workFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="workClear()">🗑 Тазалау</button>
+    </div>
+    <div id="workReport"></div>
   </section>
 
   <section class="section" id="psy">
@@ -3378,7 +3402,7 @@ function aggAkt(doc){
 function aggPsy(monthData, key){
   const {data, header} = monthData;
   const ci = {
-    exec: cmpCol(header,'Исполнитель'), svc: cmpCol(header,'Наименование услуги','наименование'),
+    exec: cmpColExact(header,'исполнитель','мо'), svc: cmpCol(header,'Наименование услуги','наименование'),
     status: cmpCol(header,'Статус'), err: cmpCol(header,'Ошибка'), sum: cmpCol(header,'Сумма')
   };
   let sum=0, errN=0, errSum=0;
@@ -3530,6 +3554,18 @@ async function cmpReadDoc(file){
 }
 
 /* Бағанды атымен табу */
+// Дәл баған табу: атау тура сәйкес немесе берілген сөзден басталады (префикс шатаспауы үшін)
+function cmpColExact(header, name, avoid){
+  const H = header.map(h=>String(h||'').toLowerCase().replace(/\s+/g,' ').trim());
+  const nm = name.toLowerCase();
+  // 1) толық тең
+  let i = H.findIndex(h=>h===nm);
+  if (i>=0) return i;
+  // 2) includes, бірақ avoid сөзі жоқ
+  i = H.findIndex(h=>h.includes(nm) && (!avoid || !h.includes(avoid.toLowerCase())));
+  return i;
+}
+
 function cmpCol(header, ...names){
   const H = header.map(h=>String(h||'').toLowerCase().replace(/\s+/g,' ').trim());
   for (const n of names){
@@ -3845,7 +3881,84 @@ if (typeof module!=='undefined') module.exports = {trendPanel, STORE_SECTIONS};
 /* ============================================================
    📤 БӨЛІМ: СЫРТҚЫ БАҒЫТТАР (внешние направления)
    ============================================================ */
-const REF = { months:{}, log:[] };  // months: {'YYYY-MM': {rows, header, idx}}
+const REF = { months:{}, log:[], filter:{}, filterMonth:'' };  // months: {'YYYY-MM': {data, header}}
+
+/* ============================================================
+   🔍 СЫРТҚЫ ҚЫЗМЕТ ФИЛЬТРІ — тек тірі дерек (браузерде), нәтиже АГРЕГАТ
+   Пациент ИИН/ФИО/диагнозы ЕШҚАШАН көрсетілмейді — тек жиынтық.
+   ============================================================ */
+const REF_FILTER_FIELDS = [
+  {key:'mo',    col:['МО получатель направления','получатель'], label:'Мекеме (қай ауруханаға)'},
+  {key:'svc',   col:['Наименование услуги','наименование'],     label:'Қызмет түрі'},
+  {key:'uch',   col:['Участок прикрепления','участок'],          label:'Учаске'},
+  {key:'vrach', col:['Врач направитель','врач'],                 label:'Дәрігер (жолдаған)'},
+  {key:'povod', col:['Повод обращения','повод'],                 label:'Повод (себеп)'},
+  {key:'fin',   col:['Источник финансирования','финансирован'],  label:'Қаржы көзі'},
+  {key:'place', col:['Место оказания услуги','место оказания'],  label:'Көрсету орны'},
+  {key:'kpn',   col:['КПН/ Вне КПН','КПН'],                       label:'КПН / Вне КПН'},
+];
+
+// Барлық айдың деректін біріктіріп, бағандар индексін табу
+function refAllRows(){
+  const out=[]; // {row, header, period}
+  Object.keys(REF.months).sort().forEach(k=>{
+    const M=REF.months[k];
+    if (M._agg) return; // сервер-агрегатта жол-жол дерек жоқ, тек тірі жүктелгенде фильтр
+    (M.data||[]).forEach(r=>out.push({row:r, header:M.header, period:k}));
+  });
+  return out;
+}
+
+// Бір өріс үшін бірегей мәндер (фильтр опциялары)
+function refUniqueValues(fieldKey, monthFilter){
+  const f=REF_FILTER_FIELDS.find(x=>x.key===fieldKey); if(!f) return [];
+  const set=new Set();
+  Object.keys(REF.months).sort().forEach(k=>{
+    if (monthFilter && k!==monthFilter) return;
+    const M=REF.months[k]; if(M._agg||!M.header) return;
+    const ci=cmpCol(M.header, ...f.col); if(ci<0) return;
+    (M.data||[]).forEach(r=>{ const v=ayClean(r[ci]); if(v) set.add(v); });
+  });
+  return [...set].sort();
+}
+
+// Фильтрді қолданып, АГРЕГАТ есептеу (пациент дерегінсіз)
+function refApplyFilter(){
+  const rows=refAllRows();
+  const active=REF.filter;
+  let matched=[];
+  for (const item of rows){
+    if (REF.filterMonth && item.period!==REF.filterMonth) continue;
+    let ok=true;
+    for (const f of REF_FILTER_FIELDS){
+      const want=active[f.key];
+      if (!want) continue;
+      const ci=cmpCol(item.header, ...f.col);
+      const val=ci>=0?ayClean(item.row[ci]):'';
+      if (val!==want){ ok=false; break; }
+    }
+    if (ok) matched.push(item);
+  }
+  return matched;
+}
+
+// Агрегат-қорытынды (сома, қызмет саны, бөліністер)
+function refAggregate(matched){
+  const sumCol=(item)=>{ const ci=cmpCol(item.header,'Сумма'); return ci>=0?(ayNum(item.row[ci])||0):0; };
+  const qtyCol=(item)=>{ const ci=cmpCol(item.header,'Кол-во услуг','кол-во'); return ci>=0?(ayNum(item.row[ci])||0):0; };
+  let totalSum=0, totalQty=0;
+  const byMo={}, bySvc={}, byMonth={}, byFin={};
+  for (const item of matched){
+    const s=sumCol(item), q=qtyCol(item)||1;
+    totalSum+=s; totalQty+=q;
+    const add=(o,col)=>{ const ci=cmpCol(item.header,...col); const v=ci>=0?ayClean(item.row[ci]):''; if(v){ o[v]=o[v]||{n:0,sum:0}; o[v].n++; o[v].sum+=s; } };
+    add(byMo, REF_FILTER_FIELDS[0].col);
+    add(bySvc, REF_FILTER_FIELDS[1].col);
+    add(byFin, REF_FILTER_FIELDS[5].col);
+    byMonth[item.period]=byMonth[item.period]||{n:0,sum:0}; byMonth[item.period].n++; byMonth[item.period].sum+=s;
+  }
+  return {count:matched.length, totalSum:+totalSum.toFixed(2), totalQty, byMo, bySvc, byMonth, byFin};
+}
 
 async function refHandle(files){
   const _saveResults=[];
@@ -3871,12 +3984,383 @@ async function refHandle(files){
 }
 function refClear(){ REF.months={}; REF.log=[]; cmpClearCharts('ref'); cmpEl('refReport').innerHTML=''; cmpEl('refFiles').value=''; }
 
+/* ============================================================
+   🩺 ПРОФИЛАКТИКА / Д-ЕСЕП МОНИТОРИНГІ
+   Дереккөз: «Д-учет без онкологии» (учаске-деңгейлі агрегат, айлық).
+   Пациент дерегі ЖОҚ — тек учаске × сан. Қауіпсіз.
+   ============================================================ */
+const PROF = { months:{}, log:[] };  // months: {'YYYY-MM': {uchastki:[{name,total,dynObs,age65,age65obs,jfv,jfvObs}]}}
+
+function profPeriodFromName(name){
+  // "..._01052026_31052026_..." → бірінші DDMMYYYY → YYYY-MM
+  const m = String(name).match(/_(\d{2})(\d{2})(\d{4})_/);
+  return m ? m[3]+'-'+m[2] : '';
+}
+async function profReadXlsx(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+}
+async function profHandle(files){
+  for (const f of files){
+    try {
+      const rows = await profReadXlsx(f);
+      const period = profPeriodFromName(f.name);
+      if(!period){ PROF.log.push({name:f.name, ok:false, info:'Кезең файл атауынан оқылмады (атауын өзгертпе)'}); continue; }
+      const H = (rows[1]||[]).map(h=>String(h).toLowerCase());
+      if(!H.some(h=>h.includes('участок')) || !H.some(h=>h.includes('всего состоит'))){
+        PROF.log.push({name:f.name, ok:false, info:'Бұл «Д-учет без онкологии» форматы емес сияқты'}); continue;
+      }
+      // Индекстер (құрылым 6 айда тұрақты тексерілген): 2=учаске,3=барлығы,4=динам,5=65+,6=65+динам,7=ЖФВ,8=ЖФВдинам
+      const uchastki=[];
+      rows.slice(2).forEach(r=>{
+        const uch=String(r[2]||'').trim();
+        if(!uch || /всего|итого/i.test(uch)) return;  // қосынды жолдарды өткіз
+        uchastki.push({
+          name: uch, total:(+r[3])||0, dynObs:(+r[4])||0,
+          age65:(+r[5])||0, age65obs:(+r[6])||0, jfv:(+r[7])||0, jfvObs:(+r[8])||0
+        });
+      });
+      PROF.months[period] = {uchastki};
+      const totalPat = uchastki.reduce((a,u)=>a+u.total,0);
+      PROF.log.push({name:f.name, ok:true, info:'Д-есеп · '+cmpMonLabel(period)+' · '+uchastki.length+' учаске · '+ayFmt(totalPat)+' науқас'});
+    } catch(e){ PROF.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
+  }
+  profRender();
+}
+function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl('profReport').innerHTML=''; const el=cmpEl('profFiles'); if(el) el.value=''; }
+
+/* ============================================================
+   📊 ЖҮКТЕМЕ МЕН БЕЛСЕНДІЛІК
+   Дереккөз: Форма 39 (визит белсенділігі) + Прием по записи (дәрігер қабылдауы).
+   Пациент дерегі ЖОҚ — агрегат. Түрі автоматты анықталады.
+   ============================================================ */
+const WORK = { visits:{}, appts:{}, log:[] };
+
+function workPeriod(rows){
+  for(const r of rows){ for(const c of r){
+    const m=String(c).match(/период с\s*(\d{2})\.(\d{2})\.(\d{4})/i);
+    if(m) return m[3]+'-'+m[2];
+  }}
+  return '';
+}
+async function workReadXlsx(file){
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+}
+function workDetectType(rows){
+  const txt=rows.slice(0,15).map(r=>r.join(' ').toLowerCase()).join(' ');
+  if(/числа месяца|посещений на дому|ведомость учета/.test(txt)) return 'forma39';
+  if(/фио врача|принятым пациентам|принятым на прием/.test(txt)) return 'appts';
+  return '';
+}
+async function workHandle(files){
+  for(const f of files){
+    try{
+      const rows=await workReadXlsx(f);
+      const type=workDetectType(rows);
+      const period=workPeriod(rows);
+      if(!period){ WORK.log.push({name:f.name,ok:false,info:'Кезең оқылмады («За период с ...» жоқ)'}); continue; }
+      if(type==='forma39'){
+        const tr=rows.find(r=>/всего/i.test(String(r[1])));
+        if(!tr){ WORK.log.push({name:f.name,ok:false,info:'Форма 39: «Всего» жолы табылмады'}); continue; }
+        WORK.visits[period]={ clinic:+tr[3]||0, prevention:+tr[14]||0, disease:+tr[22]||0, primary:+tr[29]||0, disp:+tr[36]||0, home:+tr[43]||0 };
+        WORK.log.push({name:f.name,ok:true,info:'Форма 39 · '+cmpMonLabel(period)+' · '+ayFmt(+tr[3]||0)+' визит'});
+      } else if(type==='appts'){
+        const byDoctor={}, bySpec={}; let total=0;
+        rows.slice(12).forEach(r=>{
+          const doc=String(r[4]||'').trim();
+          if(!doc || /итого|^б$/i.test(doc)) return;
+          const spec=String(r[6]||'').trim();
+          const cnt=(+String(r[8]).replace(/\s/g,''))||0;
+          byDoctor[doc]=(byDoctor[doc]||0)+cnt;
+          if(spec) bySpec[spec]=(bySpec[spec]||0)+cnt;
+          total+=cnt;
+        });
+        WORK.appts[period]={byDoctor,bySpec,total};
+        WORK.log.push({name:f.name,ok:true,info:'Прием по записи · '+cmpMonLabel(period)+' · '+ayFmt(total)+' қабылдау · '+Object.keys(byDoctor).length+' дәрігер'});
+      } else {
+        WORK.log.push({name:f.name,ok:false,info:'Түрі анықталмады (Форма 39 не Прием по записи емес)'});
+      }
+    }catch(e){ WORK.log.push({name:f.name,ok:false,info:'Қате: '+e.message}); }
+  }
+  workRender();
+}
+function workClear(){ WORK.visits={}; WORK.appts={}; WORK.log=[]; cmpClearCharts('work'); cmpEl('workReport').innerHTML=''; const el=cmpEl('workFiles'); if(el)el.value=''; }
+
+function workRender(){
+  cmpClearCharts('work');
+  const box=cmpEl('workReport'); if(!box) return;
+  let html=cmpStatusPanel(WORK.log);
+  const vKeys=Object.keys(WORK.visits).sort();
+  const aKeys=Object.keys(WORK.appts).sort();
+  if(!vKeys.length && !aKeys.length){ box.innerHTML=html; return; }
+
+  // ФОРМА 39 — визит белсенділігі
+  if(vKeys.length){
+    const latest=vKeys[vKeys.length-1];
+    const V=WORK.visits[latest];
+    const prevPct=V.clinic?V.prevention/V.clinic:0;
+    html+=`<div class="card"><div class="card-title">🏥 Визит белсенділігі — ${cmpMonLabel(latest)} (Форма 39)</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Емханада қабылдау</div><div class="kpi-value">${ayFmt(V.clinic)}</div></div>
+        <div class="kpi"><div class="kpi-label">Профилактика</div><div class="kpi-value">${ayFmt(V.prevention)}</div><div class="kpi-extra">${cmpPct(V.prevention,V.clinic)}</div></div>
+        <div class="kpi"><div class="kpi-label">Ауру бойынша</div><div class="kpi-value">${ayFmt(V.disease)}</div><div class="kpi-extra">${cmpPct(V.disease,V.clinic)}</div></div>
+        <div class="kpi"><div class="kpi-label">Үйде қабылдау</div><div class="kpi-value">${ayFmt(V.home)}</div></div>
+      </div>`;
+    if(prevPct>0.5){
+      html+=`<div class="alert warn" style="margin-top:10px"><div class="alert-icon">⚠️</div><div><div class="alert-text">Профилактика визиттері <strong>${(prevPct*100).toFixed(0)}%</strong> — әдеттегіден жоғары (әдетте емхана ауру визитімен басым). Бұл шынайы профилактикалық бағыт па, әлде КПН/есеп үшін кодтау ма? Тексеруге тұрарлық.</div></div></div>`;
+    }
+    if(vKeys.length>1){ html+=`<canvas id="workVisitTrend" height="100" style="margin-top:12px"></canvas>`; }
+    html+=`</div>`;
+  }
+
+  // ПРИЕМ ПО ЗАПИСИ — дәрігер қабылдауы
+  if(aKeys.length){
+    const latest=aKeys[aKeys.length-1];
+    const A=WORK.appts[latest];
+    const toN=obj=>Object.fromEntries(Object.entries(obj).map(([k,v])=>[k,{n:v}]));
+    html+=`<div class="card"><div class="card-title">📅 Жазба бойынша қабылдау — ${cmpMonLabel(latest)}</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Барлық қабылдау</div><div class="kpi-value">${ayFmt(A.total)}</div></div>
+        <div class="kpi"><div class="kpi-label">Дәрігер саны</div><div class="kpi-value">${Object.keys(A.byDoctor).length}</div></div>
+        <div class="kpi"><div class="kpi-label">Мамандық саны</div><div class="kpi-value">${Object.keys(A.bySpec).length}</div></div>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">
+        <div style="flex:1;min-width:280px"><div style="font-weight:600;margin-bottom:6px">Мамандық бойынша</div>${cmpTopTable(toN(A.bySpec),{label:'Мамандық',limit:8,showSum:false})}</div>
+        <div style="flex:1;min-width:280px"><div style="font-weight:600;margin-bottom:6px">Дәрігер бойынша (топ)</div>${cmpTopTable(toN(A.byDoctor),{label:'Дәрігер',limit:10,showSum:false})}</div>
+      </div>
+      <div style="font-size:12px;color:var(--ink-2);margin-top:8px">Дәрігер жүктемесі — қабылдау саны. Ескер: бұл «жазба бойынша» қабылдау, жалпы жүктеме емес. Әділ бөлу үшін ставка/мамандықты да ескер.</div></div>`;
+  }
+
+  box.innerHTML=html;
+  if(vKeys.length>1 && document.getElementById('workVisitTrend')){
+    cmpChart('work','workVisitTrend',{type:'bar',data:{labels:vKeys.map(cmpMonLabel),datasets:[
+      {label:'Профилактика',data:vKeys.map(k=>WORK.visits[k].prevention),backgroundColor:'#16a34a'},
+      {label:'Ауру',data:vKeys.map(k=>WORK.visits[k].disease),backgroundColor:'#dc2626'},
+      {label:'Үйде',data:vKeys.map(k=>WORK.visits[k].home),backgroundColor:'#2563eb'}
+    ]},options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{}}},plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},title:{display:true,text:'Визит динамикасы — профилактика/ауру/үй'}}}});
+  }
+}
+
+
+function profRender(){
+  cmpClearCharts('prof');
+  const box = cmpEl('profReport'); if(!box) return;
+  let html = cmpStatusPanel(PROF.log);
+  const keys = Object.keys(PROF.months).sort();
+  if(!keys.length){ box.innerHTML = html; return; }
+
+  const latest = keys[keys.length-1];
+  const L = PROF.months[latest];
+  const sum = (arr,f)=>arr.reduce((a,u)=>a+f(u),0);
+  const totalPat = sum(L.uchastki,u=>u.total);
+  const total65  = sum(L.uchastki,u=>u.age65);
+  const totalJfv = sum(L.uchastki,u=>u.jfv);
+  const totalDyn = sum(L.uchastki,u=>u.dynObs);
+
+  // KPI
+  html += `<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Д-есепте (${cmpMonLabel(latest)})</div><div class="kpi-value">${ayFmt(totalPat)}</div><div class="kpi-extra">${L.uchastki.length} учаске</div></div>
+    <div class="kpi"><div class="kpi-label">65 жас және үлкен</div><div class="kpi-value">${ayFmt(total65)}</div><div class="kpi-extra">${cmpPct(total65,totalPat)}</div></div>
+    <div class="kpi"><div class="kpi-label">ЖФВ (әйелдер)</div><div class="kpi-value">${ayFmt(totalJfv)}</div><div class="kpi-extra">${cmpPct(totalJfv,totalPat)}</div></div>
+    <div class="kpi ${totalPat&&totalDyn/totalPat<0.3?'warn':''}"><div class="kpi-label">Повод «динам.бақылау»</div><div class="kpi-value">${ayFmt(totalDyn)}</div><div class="kpi-extra">${cmpPct(totalDyn,totalPat)} кодталған</div></div>
+  </div>`;
+
+  // Тренд график
+  html += `<div class="card"><div class="card-title">📈 Д-есеп динамикасы (айма-ай)</div><canvas id="profTrend" height="110"></canvas></div>`;
+
+  // Учаске кестесі (соңғы ай)
+  html += `<div class="card"><div class="card-title">📍 Учаске бойынша — ${cmpMonLabel(latest)} (мейіргер басымдығы)</div>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">Қай учаскеде қанша науқас. Нақты кім — ДамуМедтен ал; портал тек санды көрсетеді (пациент дерегі жоқ).</div>
+    <div style="overflow-x:auto"><table><tr><th>Учаске</th><th>Барлығы Д-есеп</th><th>65+</th><th>ЖФВ</th><th>Повод кодталған</th><th>Кодтау %</th></tr>`;
+  L.uchastki.slice().sort((a,b)=>b.total-a.total).forEach(u=>{
+    const pct = u.total? u.dynObs/u.total : 0;
+    const flag = pct<0.1?'🔴':pct<0.3?'🟡':'';
+    html += `<tr><td>${u.name}</td><td><strong>${ayFmt(u.total)}</strong></td><td>${ayFmt(u.age65)}</td><td>${ayFmt(u.jfv)}</td><td>${ayFmt(u.dynObs)} ${flag}</td><td>${cmpPct(u.dynObs,u.total)}</td></tr>`;
+  });
+  html += `</table></div><div style="font-size:11px;color:var(--ink-2);margin-top:8px">🔴 — повод 10%-дан аз кодталған (кодтау проблемасы, қаржы/аудит тәуекелі); 🟡 — 30%-дан аз. Науқас Д-кабинеттен өтсе де повод дұрыс қойылмаса, КПН/аудитте «болмаған» болып саналады.</div></div>`;
+
+  // Учаске график
+  html += `<div class="card"><div class="card-title">📊 Учаске бойынша науқас саны</div><canvas id="profUch" height="${Math.max(220, L.uchastki.length*34)}"></canvas></div>`;
+
+  // Шара орындалуы туралы ескерту
+  html += `<div class="card" style="border-color:#bfdbfe;background:#eff6ff">
+    <div class="card-title">ℹ️ Шара орындалуы (сапаның басты көрсеткіші) — бөлек есепте</div>
+    <div style="font-size:13px;color:var(--ink)">Бұл выгрузка учаске бойынша <strong>санды</strong> береді, бірақ <strong>шара орындалуын</strong> (назначено vs выполнено) көрсетпейді. Ол «Статистика диспансерного учета» есебінде — бірақ тек мекеме деңгейінде (учаске бойынша жоқ). Мекеме деңгейінде орындау <strong>76-96%</strong> (жақсы). Учаске бойынша орындауды ДамуМедтен тікелей тексер.</div>
+  </div>`;
+
+  box.innerHTML = html;
+
+  // Тренд график
+  const tTotal = keys.map(k=>PROF.months[k].uchastki.reduce((a,u)=>a+u.total,0));
+  const t65 = keys.map(k=>PROF.months[k].uchastki.reduce((a,u)=>a+u.age65,0));
+  cmpChart('prof','profTrend',{type:'line', data:{labels:keys.map(cmpMonLabel),
+    datasets:[
+      {label:'Барлығы Д-есеп', data:tTotal, borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.3},
+      {label:'65+', data:t65, borderColor:'#dc2626', tension:.3}
+    ]}, options:{scales:{y:{beginAtZero:false}}}});
+
+  // Учаске bar (көлденең)
+  const sorted = L.uchastki.slice().sort((a,b)=>b.total-a.total);
+  cmpChart('prof','profUch',{type:'bar', data:{labels:sorted.map(u=>u.name),
+    datasets:[
+      {label:'Барлығы', data:sorted.map(u=>u.total), backgroundColor:'#2563eb'},
+      {label:'65+', data:sorted.map(u=>u.age65), backgroundColor:'#dc2626'},
+      {label:'ЖФВ', data:sorted.map(u=>u.jfv), backgroundColor:'#16a34a'}
+    ]}, options:{indexAxis:'y', plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
+}
+
+
+/* 🧪 Зертхана ысырабы: ішке қайтаруға болатын анализдер + қымбат сыртқы анализдер */
+// Ішкі зертхана істей алатын анализдердің үлгілері (кеңейтуге болады)
+const REF_INHOUSE_PATTERNS = {
+  'ОАК (жалпы қан)': /общ.*анализ.*кров|общеклиническ.*кров|развернут.*кров|подсчет.*(эритроцит|лейкоцит|тромбоцит)|лейкоцит.*формул|определение соэ|определение гемоглобина/i,
+  'Биохимия (базалық)': /определение глюкоз|аланинаминотрансфераз|аспартатаминотрансфераз|определение креатинин|определение мочевин|определение.*билирубин|определение общего белка|определение холестерин|альфа-амилаз|щелочн.*фосфатаз/i,
+  'ОАМ (жалпы зәр)': /общ.*анализ.*моч|общеклиническ.*моч|исследование мочи общ/i
+};
+function refLabAnalysis(){
+  const rows = refAllRows();
+  if(!rows.length) return '';
+  // Ішке қайтаруға болатын анализдерді табу
+  const inhouse={};  // тип → {n,sum, orgs:{}}
+  Object.keys(REF_INHOUSE_PATTERNS).forEach(t=>inhouse[t]={n:0,sum:0,orgs:{}});
+  const allSvc={};  // барлық анализ → {n,sum}
+  let inhouseSum=0, inhouseN=0, totalSum=0;
+  for(const item of rows){
+    const ciSvc=cmpCol(item.header,'Наименование услуги','наименование');
+    const ciSum=cmpCol(item.header,'Сумма');
+    const ciMO=cmpCol(item.header,'МО получатель направления','получатель');
+    const svc=ciSvc>=0?ayClean(item.row[ciSvc]):'';
+    const sum=ciSum>=0?(ayNum(item.row[ciSum])||0):0;
+    const mo=ciMO>=0?ayClean(item.row[ciMO]):'';
+    if(!svc) continue;
+    totalSum+=sum;
+    allSvc[svc]=allSvc[svc]||{n:0,sum:0}; allSvc[svc].n++; allSvc[svc].sum+=sum;
+    for(const [t,re] of Object.entries(REF_INHOUSE_PATTERNS)){
+      if(re.test(svc)){ inhouse[t].n++; inhouse[t].sum+=sum; if(mo){inhouse[t].orgs[mo]=(inhouse[t].orgs[mo]||0)+sum;} inhouseSum+=sum; inhouseN++; break; }
+    }
+  }
+  if(totalSum===0) return '';
+
+  let html = '<div class="card" style="border-color:#fde68a">';
+  html += '<div class="card-title">🧪 Зертхана талдауы — ысырап пен қымбат анализдер</div>';
+
+  // 1. Ішке қайтаруға болатын
+  html += `<div style="padding:12px;background:#fffbeb;border-radius:10px;margin-bottom:12px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">1. Ішкі зертхана істей алатын, бірақ сыртқа кеткен</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px">
+      <div><div style="font-size:11px;color:var(--ink-2)">Жолдама</div><div style="font-size:20px;font-weight:700">${ayFmt(inhouseN)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-2)">Сома</div><div style="font-size:20px;font-weight:700;color:#b45309">${cmpMoney(inhouseSum)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-2)">Сыртқы шығыннан</div><div style="font-size:20px;font-weight:700">${cmpPct(inhouseSum,totalSum)}</div></div>
+    </div>`;
+  const inhLines = Object.entries(inhouse).filter(([t,v])=>v.n>0);
+  if(inhLines.length){
+    html += '<table style="font-size:13px"><tr><th>Анализ түрі</th><th>Жолдама</th><th>Сома</th><th>Негізгі мекеме</th></tr>';
+    inhLines.sort((a,b)=>b[1].sum-a[1].sum).forEach(([t,v])=>{
+      const topOrg=Object.entries(v.orgs).sort((a,b)=>b[1]-a[1])[0];
+      html += `<tr><td>${t}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpMoney(v.sum)}</td><td style="font-size:11px;color:var(--ink-2)">${topOrg?topOrg[0].slice(0,30):'—'}</td></tr>`;
+    });
+    html += '</table>';
+    html += `<div style="font-size:11px;color:var(--ink-2);margin-top:6px">Егер зертханаң бос қуаттылықта тұрса, бұларды ішке қайтарып үнемдеуге болады. Бірақ бұл — кіші рычаг. Ескер: реагент жетіспеуі, әдіс, немесе аккредитация себебінен сыртқа жіберілуі де мүмкін.</div>`;
+  } else {
+    html += '<div style="font-size:13px;color:#15803d">✅ Базалық анализдер сыртқа кетпейді.</div>';
+  }
+  html += '</div>';
+
+  // 2. Ең қымбат сыртқы анализдер (тағайындау тәртібін тексеру)
+  html += `<div style="padding:12px;background:var(--bg-card-2);border-radius:10px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">2. Ең қымбат сыртқы анализдер (нағыз рычаг)</div>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">Бұларды ішке қайтара алмайсың, бірақ тағайындау негізділігін тексер: артық жазылмай ма? (Мыс. Витамин D, гормон панельдері жиі артық тапсырылады.)</div>
+    ${cmpTopTable(allSvc,{label:'Анализ',bySum:true,limit:15})}
+  </div>`;
+
+  html += '</div>';
+  return html;
+}
+
+/* Фильтр панелінің HTML-і + нәтиже */
+function refFilterUI(liveKeys){
+  const f=REF.filter;
+  // Ай таңдау опциялары
+  let monthOpts='<option value="">Барлық ай</option>';
+  liveKeys.forEach(k=>{ monthOpts+=`<option value="${k}"${REF.filterMonth===k?' selected':''}>${cmpMonLabel(k)}</option>`; });
+  // Әр өріс үшін select
+  let fields='';
+  REF_FILTER_FIELDS.forEach(fld=>{
+    const vals=refUniqueValues(fld.key, REF.filterMonth);
+    if (!vals.length) return;
+    let opts=`<option value="">— бәрі —</option>`;
+    vals.forEach(v=>{ const sel=f[fld.key]===v?' selected':''; const short=v.length>45?v.slice(0,45)+'…':v; opts+=`<option value="${v.replace(/"/g,'&quot;')}"${sel}>${short}</option>`; });
+    fields+=`<div style="display:flex;flex-direction:column;gap:3px;min-width:200px;flex:1">
+      <label style="font-size:11px;color:var(--ink-2);font-weight:600">${fld.label} <span style="opacity:.6">(${vals.length})</span></label>
+      <select onchange="refSetFilter('${fld.key}', this.value)" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:var(--bg-card)">${opts}</select>
+    </div>`;
+  });
+  const activeCount=Object.values(f).filter(Boolean).length + (REF.filterMonth?1:0);
+
+  // Нәтиже (агрегат)
+  const matched=refApplyFilter();
+  const agg=refAggregate(matched);
+  let result='';
+  if (activeCount>0 || matched.length<refAllRows().length){
+    result=`<div style="margin-top:14px;padding:14px;background:var(--bg-card-2);border-radius:10px">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-bottom:${matched.length?'12px':'0'}">
+        <div><div style="font-size:11px;color:var(--ink-2)">Сәйкес жазба</div><div style="font-size:22px;font-weight:700">${ayFmt(agg.count)}</div></div>
+        <div><div style="font-size:11px;color:var(--ink-2)">Қызмет саны</div><div style="font-size:22px;font-weight:700">${ayFmt(agg.totalQty)}</div></div>
+        <div><div style="font-size:11px;color:var(--ink-2)">Жалпы сома</div><div style="font-size:22px;font-weight:700;color:var(--accent)">${cmpMoney(agg.totalSum)}</div></div>
+        ${agg.count?`<div><div style="font-size:11px;color:var(--ink-2)">Орташа баға</div><div style="font-size:22px;font-weight:700">${cmpMoney(agg.totalSum/agg.count)}</div></div>`:''}
+      </div>`;
+    if (matched.length){
+      // Мекеме бойынша топ (егер мекеме сүзгісі қойылмаса)
+      if (!f.mo && Object.keys(agg.byMo).length>1){
+        result+=`<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;margin-bottom:4px">Мекеме бойынша:</div>${cmpTopTable(agg.byMo,{label:'Мекеме',bySum:true,limit:8})}</div>`;
+      }
+      // Қызмет бойынша топ (егер қызмет сүзгісі қойылмаса)
+      if (!f.svc && Object.keys(agg.bySvc).length>1){
+        result+=`<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;margin-bottom:4px">Қызмет түрі бойынша:</div>${cmpTopTable(agg.bySvc,{label:'Қызмет',bySum:true,limit:8})}</div>`;
+      }
+      // Айлық график
+      if (Object.keys(agg.byMonth).length>1){
+        result+=`<canvas id="refFilterChart" height="90" style="margin-top:10px"></canvas>`;
+      }
+    } else {
+      result+='<div style="color:var(--ink-2);font-size:13px">Сүзгіге сәйкес жазба табылмады.</div>';
+    }
+    result+='</div>';
+  }
+
+  return `<div class="card" style="border-color:#bfdbfe">
+    <div class="card-title">🔍 Сыртқы қызмет сүзгісі ${activeCount>0?`<span style="font-size:12px;color:var(--accent)">(${activeCount} сүзгі белсенді)</span>`:''}</div>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Мекеме, қызмет, учаске, дәрігер бойынша сүзіп, жиынтық сома мен қызмет санын көр. <strong>Пациент дерегі көрсетілмейді — тек агрегат.</strong></div>
+    <div style="display:flex;flex-direction:column;gap:3px;max-width:240px;margin-bottom:10px">
+      <label style="font-size:11px;color:var(--ink-2);font-weight:600">Кезең</label>
+      <select onchange="refSetMonth(this.value)" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:var(--bg-card)">${monthOpts}</select>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${fields}</div>
+    ${activeCount>0?`<button onclick="refClearFilter()" class="icon-btn" style="margin-top:10px;font-size:12px">✖️ Сүзгіні тазалау</button>`:''}
+    ${result}
+  </div>`;
+}
+function refSetFilter(key, val){ if(val) REF.filter[key]=val; else delete REF.filter[key]; refRender(); }
+function refSetMonth(val){ REF.filterMonth=val; refRender(); }
+function refClearFilter(){ REF.filter={}; REF.filterMonth=''; refRender(); }
+
 function refRender(){
   cmpClearCharts('ref');
   const box = cmpEl('refReport');
   let html = (typeof storePanel==='function'?storePanel('ref'):'') + cmpStatusPanel(REF.log);
   const keys = Object.keys(REF.months).sort();
   if (!keys.length){ box.innerHTML = html; return; }
+
+  // ── 🔍 ФИЛЬТР ПАНЕЛІ (тек тірі жүктелген айлар үшін; сервер-агрегатта жол-жол дерек жоқ) ──
+  const liveKeys = keys.filter(k=>!REF.months[k]._agg);
+  if (liveKeys.length){
+    html += refFilterUI(liveKeys);
+    html += refLabAnalysis();
+  }
 
   // Әр айдың агрегаты (тірі деректен НЕМЕСЕ сервер-агрегаттан)
   const monthly = {};
@@ -3990,6 +4474,23 @@ function refRender(){
 
   box.innerHTML = html;
 
+  // Фильтр графигі (айлық, егер фильтр нәтижесі көп айды қамтыса)
+  const liveKeysF = keys.filter(k=>!REF.months[k]._agg);
+  if (liveKeysF.length){
+    const matchedF=refApplyFilter();
+    const aggF=refAggregate(matchedF);
+    const moKeys=Object.keys(aggF.byMonth).sort();
+    if (moKeys.length>1 && document.getElementById('refFilterChart')){
+      cmpChart('ref','refFilterChart',{type:'bar', data:{labels:moKeys.map(cmpMonLabel),
+        datasets:[
+          {label:'Қызмет саны', data:moKeys.map(k=>aggF.byMonth[k].n), backgroundColor:'#2563eb', yAxisID:'y'},
+          {label:'Сома (млн)', data:moKeys.map(k=>+(aggF.byMonth[k].sum/1e6).toFixed(2)), type:'line', borderColor:'#16a34a', backgroundColor:'#16a34a', yAxisID:'y1', tension:.3}
+        ]},
+        options:{plugins:{title:{display:true,text:'Сүзілген нәтиже — айлық динамика'},legend:{position:'bottom',labels:{boxWidth:12,font:{size:10}}}},
+          scales:{y:{title:{display:true,text:'саны'}},y1:{position:'right',grid:{display:false},title:{display:true,text:'млн тг'}}}}});
+    }
+  }
+
   // Графиктер
   cmpChart('ref','refTrend',{type:'line', data:{labels:keys.map(cmpMonLabel),
     datasets:[{label:'Қызмет саны', data:keys.map(k=>monthly[k].n), borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.3},
@@ -4055,7 +4556,7 @@ function psyRender(){
     }
     const {data, header} = Mn;
     const ci = {
-      exec: cmpCol(header,'Исполнитель'), svc: cmpCol(header,'Наименование услуги','наименование'),
+      exec: cmpColExact(header,'исполнитель','мо'), svc: cmpCol(header,'Наименование услуги','наименование'),
       povod: cmpCol(header,'Повод обращения','повод'), status: cmpCol(header,'Статус'),
       err: cmpCol(header,'Ошибка'), sum: cmpCol(header,'Сумма'), pay: cmpCol(header,'Тип оплаты'),
     };
@@ -4064,7 +4565,7 @@ function psyRender(){
     for (const r of data){
       const s = ayNum(r[ci.sum])||0; mSum+=s;
       const ex = ayClean(r[ci.exec]), sv = ayClean(r[ci.svc]);
-      if (ex){ execM[ex]=execM[ex]||{n:0,sum:0}; execM[ex].n++; execM[ex].sum+=s; allExec[ex]=allExec[ex]||{n:0,sum:0}; allExec[ex].n++; allExec[ex].sum+=s; }
+      if (ex){ execM[ex]=execM[ex]||{n:0,sum:0}; execM[ex].n++; execM[ex].sum+=s; allExec[ex]=allExec[ex]||{n:0,sum:0,svc:{}}; allExec[ex].n++; allExec[ex].sum+=s; if(sv){allExec[ex].svc[sv]=(allExec[ex].svc[sv]||0)+1;} }
       if (sv){ svcM[sv]=svcM[sv]||{n:0,sum:0}; svcM[sv].n++; svcM[sv].sum+=s; allSvc[sv]=allSvc[sv]||{n:0,sum:0}; allSvc[sv].n++; allSvc[sv].sum+=s; }
       const st = ayClean(r[ci.status]); if(st){ allStatus[st]=(allStatus[st]||0)+1; }
       const er = ayClean(r[ci.err]); if(er){ mErr++; const norm=/Дата смерти/i.test(er)?'Қайтыс болған пациент':er.replace(/\d{2}\.\d{2}\.\d{4}[^;]*/g,'').trim().slice(0,80); allErr[norm]=(allErr[norm]||0)+1; }
@@ -4099,6 +4600,48 @@ function psyRender(){
 
   // Топ қызметтер
   html += `<div class="card"><div class="card-title">🔬 Топ қызметтер (көлем бойынша)</div>${cmpTopTable(allSvc,{label:'Қызмет',limit:15})}</div>`;
+
+  // ── 📉 ЕҢ АЗ ҚЫЗМЕТ КӨРСЕТКЕН ДӘРІГЕРЛЕР (контекстпен) ──
+  const execList = Object.entries(allExec).map(([name,v])=>{
+    const topSvc = Object.entries(v.svc||{}).sort((a,b)=>b[1]-a[1])[0];
+    const svcName = topSvc?topSvc[0]:'';
+    // Рөл анықтау (мейіргер / тар маман / семья дәрігері)
+    let role='Дәрігер', roleColor='#64748b';
+    if (/медицинская сестра|мейіргер|медсестра/i.test(svcName)){ role='Мейіргер'; roleColor='#0891b2'; }
+    else if (/семейный врач|жалпы практика|врач общей/i.test(svcName)){ role='Семья дәрігері'; roleColor='#16a34a'; }
+    else if (/консультация/i.test(svcName)){ role='Тар маман'; roleColor='#9333ea'; }
+    else if (/узи|ультразвук|рентген|флюор|лаборат|анализ/i.test(svcName)){ role='Диагностика'; roleColor='#d97706'; }
+    return {name, n:v.n, sum:v.sum, svcTypes:Object.keys(v.svc||{}).length, topSvc:svcName, role, roleColor};
+  });
+  execList.sort((a,b)=>a.n-b.n);
+  const nDoc=execList.length;
+  const medN = nDoc? execList[Math.floor(nDoc/2)].n : 0;
+  const avgN = nDoc? Math.round(execList.reduce((a,d)=>a+d.n,0)/nDoc) : 0;
+  if (nDoc>3){
+    html += `<div class="card" style="border-color:#fecaca">
+      <div class="card-title">📉 Ең аз қызмет көрсеткен қызметкерлер</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">
+        <strong>Назар аудар:</strong> «Аз қызмет» ≠ «нашар жұмыс». Мейіргер, тар маман (сирек жүгінеді) немесе жарты ставка дәрігер табиғи түрде аз көрсетеді. Рөл мен басты қызмет түріне қарап баға бер. Медиана: <strong>${medN}</strong>, орташа: <strong>${avgN}</strong> қызмет/қызметкер.
+      </div>
+      <div style="overflow-x:auto"><table>
+        <tr><th>Қызметкер</th><th>Рөл</th><th>Қызмет саны</th><th>Медианадан</th><th>Сома, тг</th><th>Басты қызметі</th></tr>`;
+    execList.slice(0, Math.min(12, nDoc)).forEach(d=>{
+      const ratio = medN? (d.n/medN) : 1;
+      const flag = ratio<0.3 ? '🔴' : ratio<0.6 ? '🟡' : '';
+      const vsMed = medN? (d.n<medN?'−'+Math.round((1-ratio)*100)+'%':'+'+Math.round((ratio-1)*100)+'%') : '—';
+      html += `<tr>
+        <td>${d.name}</td>
+        <td><span style="color:${d.roleColor};font-size:11px;font-weight:600">${d.role}</span></td>
+        <td><strong>${ayFmt(d.n)}</strong> ${flag}</td>
+        <td style="color:${ratio<0.6?'#b45309':'inherit'};font-size:12px">${vsMed}</td>
+        <td>${ayFmt(Math.round(d.sum))}</td>
+        <td style="font-size:12px;color:var(--ink-2)">${d.topSvc.slice(0,35)}</td>
+      </tr>`;
+    });
+    html += `</table></div>
+      <div style="font-size:11px;color:var(--ink-2);margin-top:8px">🔴 — медианадан 3 есе төмен (тексеруге тұрарлық, бірақ рөлді ескер); 🟡 — 2 есе төмен. Шешім қабылдамас бұрын: ставка (толық/жарты), демалыс/ауру күндері, мамандық ерекшелігін тексер.</div>
+    </div>`;
+  }
 
   // ВАКЦИНА / МАНТУ арнайы талдау
   if (Object.keys(VACC).length || Object.keys(MANTU).length){
@@ -4397,6 +4940,38 @@ function proRender(){
   const cutMap={};
   keys.forEach(k=>PRO.months[k].services.forEach(sv=>{ if(sv.sumCut){ cutMap[sv.name]=cutMap[sv.name]||{n:0,sum:0}; cutMap[sv.name].n+=(sv.qtyCut||0); cutMap[sv.name].sum+=sv.sumCut; } }));
   if (Object.keys(cutMap).length) html += `<div class="card"><div class="card-title">Дефект — бағыттар бойынша (барлық ай Σ)</div>${cmpTopTable(cutMap,{label:'Бағыт',bySum:true,limit:12})}</div>`;
+
+  // ── ЛИНЕЙКА: қай қызмет түрінен қанша кесілген (барлық ай Σ) + айлық динамика ──
+  const linMap={};      // қызмет → {withheld, fact, plan} жиынтық
+  const linByMonth={};  // қызмет → {ай: withheld}
+  keys.forEach(k=>{
+    (PRO.months[k].linear||[]).forEach(L=>{
+      if (!L.name) return;
+      const w = L.withheld||0;
+      linMap[L.name] = linMap[L.name] || {withheld:0, fact:0, plan:0};
+      linMap[L.name].withheld += w;
+      linMap[L.name].fact += L.fact||0;
+      linMap[L.name].plan += L.plan||0;
+      linByMonth[L.name] = linByMonth[L.name] || {};
+      linByMonth[L.name][k] = (linByMonth[L.name][k]||0) + w;
+    });
+  });
+  const linServices = Object.keys(linMap).filter(n=>linMap[n].withheld>0).sort((a,b)=>linMap[b].withheld-linMap[a].withheld);
+  if (linServices.length){
+    // Жиынтық кесте: қызмет, факт, жоспар, асып кету, ұсталған сома, %
+    html += `<div class="card"><div class="card-title">📐 Линейка бойынша ұстау — қай қызмет түрінен (барлық ай Σ)</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">Линейная шкала жоспардан асқан қызметтерден ұстайды. Төменде — қай қызмет жоспарды асырып, нәтижесінде қанша ұсталғаны.</div>
+      <div style="overflow-x:auto"><table><tr><th>Қызмет түрі</th><th>Факт (ұсынылды)</th><th>Жоспар</th><th>Асып кету</th><th>Ұсталды</th><th>Ұстау %</th></tr>`;
+    let tW=0;
+    linServices.forEach(n=>{
+      const L=linMap[n]; const over=L.fact-L.plan; tW+=L.withheld;
+      html += `<tr><td>${n}</td><td>${ayFmt(Math.round(L.fact))}</td><td>${ayFmt(Math.round(L.plan))}</td><td style="color:${over>0?'#b45309':'inherit'}">${over>0?'+'+ayFmt(Math.round(over)):'—'}</td><td style="color:#dc2626"><strong>${ayFmt(Math.round(L.withheld))}</strong></td><td>${L.fact?cmpPct(L.withheld,L.fact):'—'}</td></tr>`;
+    });
+    html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td colspan="3"></td><td style="color:#dc2626"><strong>${ayFmt(Math.round(tW))}</strong></td><td></td></tr></table></div>`;
+    // Айлық динамика графигі (топ-5 қызмет)
+    html += `<canvas id="proLinByMonth" height="110" style="margin-top:12px"></canvas></div>`;
+  }
+
   // Инсайт
   const ins=[];
   const worst=keys.slice().sort((a,b)=>M[b].loss-M[a].loss)[0];
@@ -4412,6 +4987,14 @@ function proRender(){
     {label:'Қабылданды', data:keys.map(k=>M[k].acc), backgroundColor:'#16a34a'},
     {label:'Жоғалту', data:keys.map(k=>M[k].loss), type:'line', borderColor:'#dc2626', yAxisID:'y1'}]},
     options:{scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}},y1:{position:'right',grid:{display:false},ticks:{callback:v=>(v/1e6).toFixed(1)+'млн'}}}}});
+  // Линейка айлық динамика (топ-5 ұсталған қызмет)
+  if (linServices.length){
+    const top5 = linServices.slice(0,5);
+    const palette=['#dc2626','#ea580c','#d97706','#ca8a04','#65a30d'];
+    cmpChart('pro','proLinByMonth',{type:'bar', data:{labels:keys.map(cmpMonLabel),
+      datasets: top5.map((n,i)=>({label:n.length>30?n.slice(0,30)+'…':n, data:keys.map(k=>(linByMonth[n]&&linByMonth[n][k])||0), backgroundColor:palette[i%palette.length]}))},
+      options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:10}}},title:{display:true,text:'Линейка ұстауы — қызмет түрі × ай'}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>(v/1e6).toFixed(1)+'млн'}}}}});
+  }
 }
 
 /* ---- АКТ салыстыру ---- */
@@ -4457,6 +5040,8 @@ document.addEventListener('DOMContentLoaded', function(){
   const bind = (id, fn) => { const e=document.getElementById(id); if(e) e.addEventListener('change', ev=>{ fn(Array.from(ev.target.files)); ev.target.value=''; }); };
   bind('conFiles', conHandle); bind('refFiles', refHandle); bind('psyFiles', psyHandle);
   bind('schFiles', schHandle); bind('proFiles', proHandle); bind('actFiles', actHandle);
+  bind('profFiles', profHandle);
+  bind('workFiles', workHandle);
   if (typeof conInit==='function'){ conInit(); conRender(); }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
   ['pro','sch','act','psy','ref'].forEach(function(sec){ var fn=window[sec+'Render']; if(fn) try{fn();}catch(e){} });
