@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.1</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.2</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4214,6 +4214,102 @@ function profRender(){
 }
 
 
+/* 🎯 Тапсыру аудиті — нұсқама критерийлерін санмен өлшеу.
+   Пациент дерегі КӨРСЕТІЛМЕЙДІ; ИИН тек қайталауды САНАУ үшін (браузерде), ешқашан экранға/серверге шықпайды. */
+const REF_AUDIT_PATTERNS = {
+  tsh:  /тиреотропн|\bттг\b/i,
+  t3:   /трийодтиронин|\bт3\b|\bt3\b/i,
+  t4:   /тироксин|\bт4\b|\bt4\b/i,
+  atpo: /тиреопероксидаз|а-тпо|антпо/i,
+  vitD: /витамин\s*d|витамина\s*d|витамин\s*д/i,
+  blood:/групп.*крови/i,
+  rh:   /резус/i
+};
+function refOrderingAudit(){
+  const rows = refAllRows();
+  if(!rows.length) return '';
+  const st={}; Object.keys(REF_AUDIT_PATTERNS).forEach(k=>st[k]={n:0,sum:0,iins:new Set()});
+  const byDocDiscr={};            // дискрециялық анализ → дәрігер
+  const discrByMonth={};          // ай → дискрециялық сома (тренд)
+  for(const item of rows){
+    const ciSvc=cmpCol(item.header,'Наименование услуги','наименование');
+    const ciSum=cmpCol(item.header,'Сумма');
+    const ciIIN=cmpCol(item.header,'ИИН','иин');
+    const ciDoc=cmpCol(item.header,'Врач направитель','врач');
+    const svc=ciSvc>=0?String(item.row[ciSvc]||''):'';
+    const sum=ciSum>=0?(ayNum(item.row[ciSum])||0):0;
+    const iin=ciIIN>=0?String(item.row[ciIIN]||'').trim():'';
+    const doc=ciDoc>=0?ayClean(item.row[ciDoc]):'';
+    for(const [k,re] of Object.entries(REF_AUDIT_PATTERNS)){
+      if(re.test(svc)){
+        st[k].n++; st[k].sum+=sum; if(iin) st[k].iins.add(iin);
+        if(['t3','t4','atpo','vitD'].includes(k)){
+          if(doc) byDocDiscr[doc]=byDocDiscr[doc]||{n:0,sum:0}, byDocDiscr[doc].n++, byDocDiscr[doc].sum+=sum;
+          discrByMonth[item.period]=(discrByMonth[item.period]||0)+sum;
+        }
+        break;
+      }
+    }
+  }
+
+  const reflexN = st.t3.n+st.t4.n+st.atpo.n;
+  const reflexSum = st.t3.sum+st.t4.sum+st.atpo.sum;
+  const reflexRatio = st.tsh.n? (reflexN/st.tsh.n) : 0;
+  const bloodRepeat = Math.max(0, st.blood.n - st.blood.iins.size);
+  const rhRepeat = Math.max(0, st.rh.n - st.rh.iins.size);
+
+  let html = '<div class="card" style="border-color:#c7d2fe">';
+  html += '<div class="card-title">🎯 Тапсыру аудиті — нұсқама критерийлерін өлшеу</div>';
+  html += '<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Дәрігерге нұсқамадағы 3 ысырап үлгісі санмен. Мақсат — дәрігермен нақты деректе сөйлесу.</div>';
+
+  // 1. Қалқанша reflex
+  const reflexFlag = reflexRatio>0.5;
+  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${reflexFlag?'#fef2f2':'#eef7f0'};border:1px solid ${reflexFlag?'#f3b4b4':'#b7ddc3'}">
+    <div style="font-weight:700;font-size:13px;margin-bottom:5px">🦋 Қалқанша: «панель-бірінші» тәуекелі ${reflexFlag?'🔴':'✅'}</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px">
+      <div>ТТГ: <strong>${ayFmt(st.tsh.n)}</strong></div>
+      <div>T3+T4+а-ТПО: <strong>${ayFmt(reflexN)}</strong></div>
+      <div>Reflex қатынасы: <strong style="color:${reflexFlag?'#dc2626':'#16a34a'};font-size:15px">${reflexRatio.toFixed(2)}</strong> <span style="color:var(--ink-2)">(идеал &lt;0.3)</span></div>
+    </div>
+    <div style="font-size:12px;margin-top:6px">Нұсқама: алдымен <strong>тек ТТГ</strong>, ауытқыса ғана T3/T4/а-ТПО. Reflex-тәртіпке көшсе, <strong style="color:#b45309">${cmpMoney(reflexSum)}</strong>-ға дейін үнем мүмкін.</div>
+  </div>`;
+
+  // 2. Витамин D
+  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:#fffbeb;border:1px solid #f2dca0">
+    <div style="font-weight:700;font-size:13px;margin-bottom:4px">☀️ Витамин D</div>
+    <div style="font-size:12px">Жолдама: <strong>${ayFmt(st.vitD.n)}</strong> · Сома: <strong>${cmpMoney(st.vitD.sum)}</strong>. Нұсқама: тек маман индикациясымен (остеопороз, мальабсорбция), «жалпы тексеру» үшін емес.</div>
+  </div>`;
+
+  // 3. Қан тобы/резус қайталауы
+  const totalRepeat = bloodRepeat+rhRepeat;
+  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${totalRepeat>0?'#fef2f2':'#eef7f0'};border:1px solid ${totalRepeat>0?'#f3b4b4':'#b7ddc3'}">
+    <div style="font-weight:700;font-size:13px;margin-bottom:4px">🩸 Қан тобы / резус қайталауы ${totalRepeat>0?'🔴':'✅'}</div>
+    <div style="font-size:12px">Қан тобы: <strong>${ayFmt(bloodRepeat)}</strong> қайталау · Резус: <strong>${ayFmt(rhRepeat)}</strong> қайталау (жалпы <strong>${ayFmt(totalRepeat)}</strong>). Бұл — таза ысырап: қан тобы/резус өмірде өзгермейді. Нұсқама: картада бар болса қайталама.</div>
+    <div style="font-size:10.5px;color:var(--ink-2);margin-top:4px">Қайталау = бір пациентке (ИИН бойынша) бірнеше рет жолдама. ИИН тек санау үшін қолданылды, ешқайда сақталмайды/көрсетілмейді.</div>
+  </div>`;
+
+  // 4. Дәрігер бойынша дискрециялық
+  const docEntries = Object.entries(byDocDiscr).sort((a,b)=>b[1].n-a[1].n).slice(0,8);
+  if(docEntries.length){
+    html += `<div style="padding:11px;border-radius:9px;background:var(--bg-card-2)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">👨‍⚕️ Дискрециялық анализ — дәрігер бойынша</div>
+      <table style="font-size:12px"><tr><th>Дәрігер</th><th>Дискрециялық жолдама</th><th>Сома</th></tr>`;
+    docEntries.forEach(([d,v])=>{ html += `<tr><td>${d}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpMoney(v.sum)}</td></tr>`; });
+    html += `</table><div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">⚠️ Ескер: жоғары көлемді (толық ставка) дәрігер табиғи түрде көп жазады. «Көп» ≠ «артық». Қабылдау санына шаққанда бағала, соқыр жаза қолданба.</div></div>`;
+  }
+
+  // Тренд (дискрециялық сома айма-ай) — нұсқама әсерін көру
+  const moKeys=Object.keys(discrByMonth).sort();
+  if(moKeys.length>1){
+    html += `<canvas id="refAuditTrend" height="90" style="margin-top:10px"></canvas>`;
+    html += `<div style="font-size:11px;color:var(--ink-2);margin-top:4px">Дискрециялық анализ сомасы айма-ай. Нұсқама таратылғаннан кейін төмендеуі — оның жұмыс істегенінің белгісі.</div>`;
+  }
+  window._refAuditMonths = discrByMonth;
+
+  html += '</div>';
+  return html;
+}
+
 /* 🧪 Зертхана ысырабы: ішке қайтаруға болатын анализдер + қымбат сыртқы анализдер */
 // Ішкі зертхана істей алатын анализдердің үлгілері (кеңейтуге болады)
 const REF_INHOUSE_PATTERNS = {
@@ -4360,6 +4456,7 @@ function refRender(){
   if (liveKeys.length){
     html += refFilterUI(liveKeys);
     html += refLabAnalysis();
+    html += refOrderingAudit();
   }
 
   // Әр айдың агрегаты (тірі деректен НЕМЕСЕ сервер-агрегаттан)
@@ -4473,6 +4570,16 @@ function refRender(){
   }
 
   box.innerHTML = html;
+
+  // Аудит тренд графигі (дискрециялық анализ сомасы айма-ай)
+  if(window._refAuditMonths && document.getElementById('refAuditTrend')){
+    const am=window._refAuditMonths; const ak=Object.keys(am).sort();
+    if(ak.length>1){
+      cmpChart('ref','refAuditTrend',{type:'bar',data:{labels:ak.map(cmpMonLabel),
+        datasets:[{label:'Дискрециялық анализ сомасы (тг)', data:ak.map(k=>Math.round(am[k])), backgroundColor:'#6366f1'}]},
+        options:{plugins:{legend:{display:false},title:{display:true,text:'Дискрециялық анализ шығыны — айма-ай'}},scales:{y:{ticks:{callback:v=>(v/1000).toFixed(0)+'мың'}}}}});
+    }
+  }
 
   // Фильтр графигі (айлық, егер фильтр нәтижесі көп айды қамтыса)
   const liveKeysF = keys.filter(k=>!REF.months[k]._agg);
