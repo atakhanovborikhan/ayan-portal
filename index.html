@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.2</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4222,91 +4222,132 @@ const REF_AUDIT_PATTERNS = {
   t4:   /тироксин|\bт4\b|\bt4\b/i,
   atpo: /тиреопероксидаз|а-тпо|антпо/i,
   vitD: /витамин\s*d|витамина\s*d|витамин\s*д/i,
+  hba1c:/гликозилированн|гликированн|hba1c/i,
   blood:/групп.*крови/i,
   rh:   /резус/i
 };
+const REF_DIABETES_DX = /e1[0-4]|сахарн.*диабет|диабет/i;
 function refOrderingAudit(){
   const rows = refAllRows();
   if(!rows.length) return '';
   const st={}; Object.keys(REF_AUDIT_PATTERNS).forEach(k=>st[k]={n:0,sum:0,iins:new Set()});
-  const byDocDiscr={};            // дискрециялық анализ → дәрігер
-  const discrByMonth={};          // ай → дискрециялық сома (тренд)
+  const byDocDiscr={}, discrByMonth={};
+  const thyGroups={};                 // "иин|күн" → қалқанша топтауы (бір күні дәлелі)
+  let hba1cNoDiab=0, hba1cNoDiabSum=0; // диабет диагнозы жоқ HbA1c
+  const hba1cNoDiabByDoc={};
+  // ИИН/күн/диагноз тек браузерде талдауға; ешқашан экранға/серверге шықпайды.
   for(const item of rows){
     const ciSvc=cmpCol(item.header,'Наименование услуги','наименование');
     const ciSum=cmpCol(item.header,'Сумма');
     const ciIIN=cmpCol(item.header,'ИИН','иин');
     const ciDoc=cmpCol(item.header,'Врач направитель','врач');
+    const ciDate=cmpCol(item.header,'Дата создания','дата созд');
+    const ciDx=cmpCol(item.header,'Диагноз');
+    const ciPovod=cmpCol(item.header,'Повод обращения','повод');
     const svc=ciSvc>=0?String(item.row[ciSvc]||''):'';
     const sum=ciSum>=0?(ayNum(item.row[ciSum])||0):0;
     const iin=ciIIN>=0?String(item.row[ciIIN]||'').trim():'';
     const doc=ciDoc>=0?ayClean(item.row[ciDoc]):'';
+    const date=ciDate>=0?String(item.row[ciDate]||'').trim():'';
+    const dx=(ciDx>=0?String(item.row[ciDx]||''):'')+' '+(ciPovod>=0?String(item.row[ciPovod]||''):'');
     for(const [k,re] of Object.entries(REF_AUDIT_PATTERNS)){
       if(re.test(svc)){
         st[k].n++; st[k].sum+=sum; if(iin) st[k].iins.add(iin);
-        if(['t3','t4','atpo','vitD'].includes(k)){
+        if(['t3','t4','atpo','vitD','hba1c'].includes(k)){
           if(doc) byDocDiscr[doc]=byDocDiscr[doc]||{n:0,sum:0}, byDocDiscr[doc].n++, byDocDiscr[doc].sum+=sum;
           discrByMonth[item.period]=(discrByMonth[item.period]||0)+sum;
+        }
+        if(['tsh','t3','t4','atpo'].includes(k) && iin && date){
+          const gk=iin+'|'+date;
+          thyGroups[gk]=thyGroups[gk]||{types:new Set(), doctor:doc, items:[]};
+          thyGroups[gk].types.add(k); thyGroups[gk].items.push({type:k, sum});
+        }
+        if(k==='hba1c' && !REF_DIABETES_DX.test(dx)){
+          hba1cNoDiab++; hba1cNoDiabSum+=sum;
+          const d=doc||'(көрсетілмеген)'; hba1cNoDiabByDoc[d]=hba1cNoDiabByDoc[d]||{n:0,sum:0}; hba1cNoDiabByDoc[d].n++; hba1cNoDiabByDoc[d].sum+=sum;
         }
         break;
       }
     }
   }
+  const reflexN=st.t3.n+st.t4.n+st.atpo.n;
+  const bloodRepeat=Math.max(0, st.blood.n-st.blood.iins.size);
+  const rhRepeat=Math.max(0, st.rh.n-st.rh.iins.size);
+  // ТТГ-мен бір күні
+  let sameDayN=0, sameDaySum=0; const sameDayByDoc={};
+  Object.values(thyGroups).forEach(g=>{ if(g.types.has('tsh')){ g.items.filter(it=>it.type!=='tsh').forEach(it=>{ sameDayN++; sameDaySum+=it.sum; const d=g.doctor||'(көрсетілмеген)'; sameDayByDoc[d]=sameDayByDoc[d]||{n:0,sum:0}; sameDayByDoc[d].n++; sameDayByDoc[d].sum+=it.sum; }); } });
 
-  const reflexN = st.t3.n+st.t4.n+st.atpo.n;
-  const reflexSum = st.t3.sum+st.t4.sum+st.atpo.sum;
-  const reflexRatio = st.tsh.n? (reflexN/st.tsh.n) : 0;
-  const bloodRepeat = Math.max(0, st.blood.n - st.blood.iins.size);
-  const rhRepeat = Math.max(0, st.rh.n - st.rh.iins.size);
+  // Дәрігер кестесі көмекшісі
+  const docTable=(obj,label,limit)=>{
+    const e=Object.entries(obj).sort((a,b)=>b[1].n-a[1].n).slice(0,limit||6);
+    if(!e.length) return '';
+    let t=`<table style="font-size:12px;margin-top:5px"><tr><th>Дәрігер</th><th>${label}</th><th>Сома</th></tr>`;
+    e.forEach(([d,v])=>t+=`<tr><td>${d}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpMoney(v.sum)}</td></tr>`);
+    return t+'</table>';
+  };
+  // Клиникалық сөйлем блогы
+  const cs=(icon,title,strong,evidence,sentence,doctorTable,note)=>{
+    const bg=strong==='red'?'#fef2f2':strong==='yellow'?'#fffbeb':'#eef7f0';
+    const bd=strong==='red'?'#f3b4b4':strong==='yellow'?'#f2dca0':'#b7ddc3';
+    return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
+      <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
+      ${doctorTable||''}
+      ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}
+    </div>`;
+  };
 
-  let html = '<div class="card" style="border-color:#c7d2fe">';
-  html += '<div class="card-title">🎯 Тапсыру аудиті — нұсқама критерийлерін өлшеу</div>';
-  html += '<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Дәрігерге нұсқамадағы 3 ысырап үлгісі санмен. Мақсат — дәрігермен нақты деректе сөйлесу.</div>';
+  let html='<div class="card" style="border-color:#c7d2fe">';
+  html+='<div class="card-title">🎯 Тапсыру аудиті — клиникалық сөйлемдер</div>';
+  html+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Әр анализ — экономикалық сан емес, дәрігерге айтылатын клиникалық тұжырым. Мақсат: айыптау емес, кәсіби диалог.</div>';
 
-  // 1. Қалқанша reflex
-  const reflexFlag = reflexRatio>0.5;
-  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${reflexFlag?'#fef2f2':'#eef7f0'};border:1px solid ${reflexFlag?'#f3b4b4':'#b7ddc3'}">
-    <div style="font-weight:700;font-size:13px;margin-bottom:5px">🦋 Қалқанша: «панель-бірінші» тәуекелі ${reflexFlag?'🔴':'✅'}</div>
-    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px">
-      <div>ТТГ: <strong>${ayFmt(st.tsh.n)}</strong></div>
-      <div>T3+T4+а-ТПО: <strong>${ayFmt(reflexN)}</strong></div>
-      <div>Reflex қатынасы: <strong style="color:${reflexFlag?'#dc2626':'#16a34a'};font-size:15px">${reflexRatio.toFixed(2)}</strong> <span style="color:var(--ink-2)">(идеал &lt;0.3)</span></div>
-    </div>
-    <div style="font-size:12px;margin-top:6px">Нұсқама: алдымен <strong>тек ТТГ</strong>, ауытқыса ғана T3/T4/а-ТПО. Reflex-тәртіпке көшсе, <strong style="color:#b45309">${cmpMoney(reflexSum)}</strong>-ға дейін үнем мүмкін.</div>
-  </div>`;
+  // 1. Қалқанша — бір күні (ең күшті дәлел)
+  html += cs('🦋','Қалқанша: ТТГ-мен бір күні жіберілген T3/T4/а-ТПО', sameDayN>0?'red':'green',
+    `Барлық T3/T4/а-ТПО: <strong>${ayFmt(reflexN)}</strong> · Оның ТТГ-мен <strong>дәл бір күні</strong>: <strong style="color:#dc2626;font-size:15px">${ayFmt(sameDayN)}</strong> · артық шығын: <strong style="color:#b45309">${cmpMoney(sameDaySum)}</strong>`,
+    `Сіз ${ayFmt(sameDayN)} T3/T4/а-ТПО анализін ТТГ-мен дәл бір күні жібердіңіз — ТТГ нәтижесі шықпай тұрып. Бұл reflex-тәртіп емес: алдымен тек ТТГ, ол ауытқыса ғана қалғаны, кейінірек.`,
+    sameDayN>0?('<div style="font-size:12px;font-weight:600;margin-top:6px">Кім жіберген:</div>'+docTable(sameDayByDoc,'Бір күні жолдама',6)):'',
+    'Даусыз дәлел — «ауру науқасым көп» деген жауап жүрмейді (нәтиже шықпай тұрып жазылған).');
 
-  // 2. Витамин D
-  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:#fffbeb;border:1px solid #f2dca0">
-    <div style="font-weight:700;font-size:13px;margin-bottom:4px">☀️ Витамин D</div>
-    <div style="font-size:12px">Жолдама: <strong>${ayFmt(st.vitD.n)}</strong> · Сома: <strong>${cmpMoney(st.vitD.sum)}</strong>. Нұсқама: тек маман индикациясымен (остеопороз, мальабсорбция), «жалпы тексеру» үшін емес.</div>
-  </div>`;
+  // 2. Қан тобы/резус қайталауы
+  const totalRepeat=bloodRepeat+rhRepeat;
+  html += cs('🩸','Қан тобы / резус қайталауы', totalRepeat>0?'red':'green',
+    `Қан тобы: <strong>${ayFmt(bloodRepeat)}</strong> қайталау · Резус: <strong>${ayFmt(rhRepeat)}</strong> қайталау (жалпы <strong>${ayFmt(totalRepeat)}</strong>)`,
+    `Сіз ${ayFmt(totalRepeat)} рет бір пациенттің қан тобын/резусын қайта жібердіңіз. Қан тобы мен резус өмірде өзгермейді — алдыңғы нәтиже картада тұр, қайта тапсыру артық.`,
+    '',
+    'Қайталау = бір ИИН-ге бірнеше жолдама. ИИН тек санауға қолданылды, көрсетілмейді/сақталмайды.');
 
-  // 3. Қан тобы/резус қайталауы
-  const totalRepeat = bloodRepeat+rhRepeat;
-  html += `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${totalRepeat>0?'#fef2f2':'#eef7f0'};border:1px solid ${totalRepeat>0?'#f3b4b4':'#b7ddc3'}">
-    <div style="font-weight:700;font-size:13px;margin-bottom:4px">🩸 Қан тобы / резус қайталауы ${totalRepeat>0?'🔴':'✅'}</div>
-    <div style="font-size:12px">Қан тобы: <strong>${ayFmt(bloodRepeat)}</strong> қайталау · Резус: <strong>${ayFmt(rhRepeat)}</strong> қайталау (жалпы <strong>${ayFmt(totalRepeat)}</strong>). Бұл — таза ысырап: қан тобы/резус өмірде өзгермейді. Нұсқама: картада бар болса қайталама.</div>
-    <div style="font-size:10.5px;color:var(--ink-2);margin-top:4px">Қайталау = бір пациентке (ИИН бойынша) бірнеше рет жолдама. ИИН тек санау үшін қолданылды, ешқайда сақталмайды/көрсетілмейді.</div>
-  </div>`;
-
-  // 4. Дәрігер бойынша дискрециялық
-  const docEntries = Object.entries(byDocDiscr).sort((a,b)=>b[1].n-a[1].n).slice(0,8);
-  if(docEntries.length){
-    html += `<div style="padding:11px;border-radius:9px;background:var(--bg-card-2)">
-      <div style="font-weight:700;font-size:13px;margin-bottom:5px">👨‍⚕️ Дискрециялық анализ — дәрігер бойынша</div>
-      <table style="font-size:12px"><tr><th>Дәрігер</th><th>Дискрециялық жолдама</th><th>Сома</th></tr>`;
-    docEntries.forEach(([d,v])=>{ html += `<tr><td>${d}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpMoney(v.sum)}</td></tr>`; });
-    html += `</table><div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">⚠️ Ескер: жоғары көлемді (толық ставка) дәрігер табиғи түрде көп жазады. «Көп» ≠ «артық». Қабылдау санына шаққанда бағала, соқыр жаза қолданба.</div></div>`;
+  // 3. HbA1c — диабет диагнозы жоқ (нюанспен)
+  if(st.hba1c.n>0){
+    html += cs('🩸','HbA1c — диабет диагнозы жоқ', hba1cNoDiab>0?'yellow':'green',
+      `Барлық HbA1c: <strong>${ayFmt(st.hba1c.n)}</strong> · Диабет диагнозы жоқ: <strong style="color:#a16207;font-size:15px">${ayFmt(hba1cNoDiab)}</strong> (${st.hba1c.n?Math.round(hba1cNoDiab/st.hba1c.n*100):0}%) · сома: <strong>${cmpMoney(hba1cNoDiabSum)}</strong>`,
+      `Бұл ${ayFmt(hba1cNoDiab)} HbA1c анализінде диабет диагнозы жоқ. Егер бұл диабет скринингі болса — тәуекел тобын негіздеп жазыңыз. Мониторинг болса — диабеті жоқ пациентке HbA1c қажет емес.`,
+      hba1cNoDiab>0?('<div style="font-size:12px;font-weight:600;margin-top:6px">Кім жіберген:</div>'+docTable(hba1cNoDiabByDoc,'Диагнозсыз HbA1c',6)):'',
+      'Ескер: HbA1c диабет скринингінде (тәуекел тобы) заңды. Сондықтан «ысырап» деп кеспейміз — негіздемені тексереміз.');
   }
 
-  // Тренд (дискрециялық сома айма-ай) — нұсқама әсерін көру
+  // 4. Витамин D — тексеру
+  if(st.vitD.n>0){
+    html += cs('☀️','Витамин D — негіздемені тексеру', 'yellow',
+      `Жолдама: <strong>${ayFmt(st.vitD.n)}</strong> · сома: <strong>${cmpMoney(st.vitD.sum)}</strong>`,
+      `Сіз ${ayFmt(st.vitD.n)} Витамин D жолдамасын жаздыңыз. Витамин D — әлемдегі ең артық тапсырылатын анализ. Әрбірінде нақты негіздеме (остеопороз, мальабсорбция, симптомды жетіспеушілік) болуын тексеріңіз — «жалпы тексеру» жеткіліксіз.`,
+      '', '');
+  }
+
+  // 5. Дискрециялық — дәрігер бойынша (жалпы контекст)
+  const docEntries=Object.entries(byDocDiscr).sort((a,b)=>b[1].n-a[1].n).slice(0,8);
+  if(docEntries.length){
+    html+=`<div style="padding:11px;border-radius:9px;background:var(--bg-card-2)"><div style="font-weight:700;font-size:13px;margin-bottom:5px">👨‍⚕️ Дискрециялық анализ — дәрігер бойынша (жалпы)</div><table style="font-size:12px"><tr><th>Дәрігер</th><th>Жолдама</th><th>Сома</th></tr>`;
+    docEntries.forEach(([d,v])=>html+=`<tr><td>${d}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpMoney(v.sum)}</td></tr>`);
+    html+=`</table><div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">⚠️ Көлемді дәрігер табиғи түрде көп жазады. «Көп» ≠ «артық» — қабылдау санына шаққанда бағала.</div></div>`;
+  }
+  // Тренд
   const moKeys=Object.keys(discrByMonth).sort();
   if(moKeys.length>1){
-    html += `<canvas id="refAuditTrend" height="90" style="margin-top:10px"></canvas>`;
-    html += `<div style="font-size:11px;color:var(--ink-2);margin-top:4px">Дискрециялық анализ сомасы айма-ай. Нұсқама таратылғаннан кейін төмендеуі — оның жұмыс істегенінің белгісі.</div>`;
+    html+=`<canvas id="refAuditTrend" height="90" style="margin-top:10px"></canvas><div style="font-size:11px;color:var(--ink-2);margin-top:4px">Дискрециялық анализ сомасы айма-ай. Нұсқамадан кейін төмендеуі — жұмыс істегенінің белгісі.</div>`;
   }
-  window._refAuditMonths = discrByMonth;
-
-  html += '</div>';
+  window._refAuditMonths=discrByMonth;
+  html+='</div>';
   return html;
 }
 
