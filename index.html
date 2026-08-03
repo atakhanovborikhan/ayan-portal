@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.4</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.6</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -619,6 +619,7 @@
     <button class="tab" data-tab="pro">📋 Протоколдар</button>
     <button class="tab" data-tab="act">📑 Актілер</button>
     <button class="tab" data-tab="prof">🩺 Профилактика</button>
+    <button class="tab" data-tab="scr">🔬 Скрининг</button>
     <button class="tab" data-tab="work">📊 Жүктеме</button>
     <button class="tab" data-tab="doctors">👨‍⚕️ Дәрігерлер</button>
     <button class="tab" data-tab="errors">⚠️ Қателер</button>
@@ -1114,6 +1115,21 @@
       <button class="icon-btn" style="margin-left:8px" onclick="profClear()">🗑 Тазалау</button>
     </div>
     <div id="profReport"></div>
+  </section>
+
+  <section class="section" id="scr">
+    <div class="section-head"><h1 class="section-title">Скрининг қамтуы</h1>
+      <div class="section-sub">ДамуМед выгрузкаларынан скрининг қамтуын есептейді (жасырын қан, маммография, ПАП-тест, флюорография). Нысаналы топ ЖСН-нен (жас/жыныс) анықталады. Портал агрегат көрсетеді; жұмыс тізімін CSV етіп жергілікті жүктеуге болады.</div></div>
+    <div class="card">
+      <div class="card-title">📂 Выгрузкаларды жүктеу</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">
+        Қажет: <b>«Сыртқы бағыттар»</b>, <b>«Төлем жүйесі»</b>, <b>«Орындалған қызметтер»</b> (бірнеше ай).
+        Қосымша: <b>«Прикрепленное население»</b> — нысаналы топты дәл есептеу үшін.
+      </div>
+      <input type="file" id="scrFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="scrClear()">🗑 Тазалау</button>
+    </div>
+    <div id="scrReport"></div>
   </section>
 
   <section class="section" id="work">
@@ -4032,6 +4048,258 @@ async function profHandle(files){
 function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl('profReport').innerHTML=''; const el=cmpEl('profFiles'); if(el) el.value=''; }
 
 /* ============================================================
+   🔬 СКРИНИНГ ҚАМТУЫ
+   ДамуМед выгрузкаларынан нысаналы топ пен қамтуды есептейді.
+   Ережелер: № ҚР ДСМ-174/2020 (өзг. №62/2024, №71/2025) — ЖОБА,
+   дәрігер растауы қажет. Түзету: төмендегі SCR_RULES массиві.
+   ============================================================ */
+const SCR_RULES = [
+  { id:'colo',  name:'Колоректалды обыр (жасырын қан)', gender:null, ageFrom:50, ageTo:76, years:2,
+    match:['скрытой крови в кале','скрытую кровь','гемокульт'] },
+  { id:'mammo', name:'Сүт безі обыры (маммография)',    gender:'Ж',  ageFrom:40, ageTo:70, years:2,
+    match:['маммография'] },
+  { id:'cerv',  name:'Жатыр мойны обыры (ПАП-тест)',    gender:'Ж',  ageFrom:30, ageTo:70, years:4,
+    match:['пап-тест','онкоцитологи','цитологическое исследование мазка'] },
+  { id:'flg',   name:'Флюорография',                     gender:null, ageFrom:18, ageTo:120, years:1,
+    match:['флюорография'] },
+];
+
+const SCR = { people:new Map(), log:[], hasPop:false, minDate:null, maxDate:null, badIin:0, totalRows:0 };
+
+/* ЖСН → туған күні + жынысы. 3=ер/1900, 4=әйел/1900, 5=ер/2000, 6=әйел/2000 */
+function scrParseIin(raw){
+  if(raw===null||raw===undefined) return null;
+  let t = String(raw).replace(/\D/g,'');
+  if(t.length===11) t = '0'+t;                 // Excel жеген алдыңғы нөл
+  if(t.length!==12) return null;
+  const yy=+t.slice(0,2), mm=+t.slice(2,4), dd=+t.slice(4,6), c=+t[6];
+  const cent = {1:1800,2:1800,3:1900,4:1900,5:2000,6:2000}[c];
+  if(!cent || mm<1 || mm>12 || dd<1 || dd>31) return null;
+  const b = new Date(cent+yy, mm-1, dd);
+  if(isNaN(b)) return null;
+  return { iin:t, birth:b, gender:(c===1||c===3||c===5)?'М':'Ж' };
+}
+function scrAge(b, on){
+  let a = on.getFullYear()-b.getFullYear();
+  const m = on.getMonth()-b.getMonth();
+  if(m<0 || (m===0 && on.getDate()<b.getDate())) a--;
+  return a;
+}
+function scrDate(v){
+  if(!v) return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  const t = String(v).trim();
+  let m = t.match(/^(\d{2})\.(\d{2})\.(\d{4})/);      if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);            if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  const d = new Date(t); return isNaN(d)?null:d;
+}
+function scrIdx(H, ...keys){
+  for(let i=0;i<H.length;i++){ const h=String(H[i]).toLowerCase(); if(keys.some(k=>h.includes(k))) return i; }
+  return -1;
+}
+
+async function scrHandle(files){
+  const today = new Date();
+  for(const f of files){
+    try{
+      const buf = await f.arrayBuffer();
+      const wb  = XLSX.read(buf, {type:'array', cellDates:true});
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const rows= XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+
+      /* тақырып жолын табу */
+      let hr = 0;
+      for(let i=0;i<Math.min(6,rows.length);i++){
+        if((rows[i]||[]).filter(x=>String(x).trim()).length>=5){ hr=i; break; }
+      }
+      const H = rows[hr]||[];
+      const iIin = scrIdx(H,'иин');
+      if(iIin<0){ SCR.log.push({name:f.name, ok:false, info:'ЖСН бағаны жоқ — бұл файл жарамайды'}); continue; }
+      const iNm  = scrIdx(H,'фио пациента','фио');
+      const iUch = scrIdx(H,'участк','участок');   // «№ участка» да табылсын
+      const iSvc = scrIdx(H,'наименование услуги');
+      const iDt  = scrIdx(H,'дата выполнения','дата создания','дата оказания');
+      const iDob = scrIdx(H,'дата рождения');      // ЖСН жасырылған болса — қосалқы дереккөз
+      const iSex = scrIdx(H,'пол');
+
+      const isPop = iSvc<0;   // қызмет бағаны жоқ → халық тізімі
+      if(isPop) SCR.hasPop = true;
+
+      let added=0, marked=0;
+      for(let i=hr+1;i<rows.length;i++){
+        const r = rows[i]; if(!r) continue;
+        if(!String(r[iIin]||'').trim()) continue;
+        SCR.totalRows++;
+        let p = scrParseIin(r[iIin]);
+        if(!p && iDob>=0){
+          /* ЖСН жасырылған (******######): туған күн мен жыныс бөлек бағанда болса, соларды аламыз.
+             Сәйкестендіру кілті = ЖЖААКК + көрінетін 6 сан (толық ЖСН қалпына келеді).
+             Бұл ТЕК браузерде, жад ішінде — экранға да, серверге де ешқашан шықпайды. */
+          const b = scrDate(r[iDob]);
+          const vis = String(r[iIin]||'').replace(/\D/g,'');   // маскадан қалған сандар
+          if(b && !isNaN(b)){
+            const yy=String(b.getFullYear()).slice(-2), mm=String(b.getMonth()+1).padStart(2,'0'), dd=String(b.getDate()).padStart(2,'0');
+            const sexRaw = iSex>=0 ? String(r[iSex]||'').toLowerCase() : '';
+            const g = sexRaw.startsWith('м') ? 'М' : sexRaw.startsWith('ж') ? 'Ж' : null;
+            if(g) p = { iin: (yy+mm+dd+vis).slice(0,12) || (yy+mm+dd+'_'+vis), birth:b, gender:g };
+          }
+        }
+        if(!p){ SCR.badIin++; continue; }
+
+        if(!SCR.people.has(p.iin)){
+          SCR.people.set(p.iin, { birth:p.birth, gender:p.gender,
+            name: iNm>=0 ? String(r[iNm]||'').trim() : '',
+            uch:  iUch>=0 ? String(r[iUch]||'').trim() : '—', done:{} });
+          added++;
+        } else if(iUch>=0){
+          const rec = SCR.people.get(p.iin);
+          if(rec.uch==='—' && String(r[iUch]||'').trim()) rec.uch = String(r[iUch]).trim();
+        }
+
+        if(iSvc>=0 && iDt>=0){
+          const svc = String(r[iSvc]||'').toLowerCase();
+          const d   = scrDate(r[iDt]);
+          if(svc && d){
+            if(!SCR.minDate || d<SCR.minDate) SCR.minDate=d;
+            if(!SCR.maxDate || d>SCR.maxDate) SCR.maxDate=d;
+            const rec = SCR.people.get(p.iin);
+            SCR_RULES.forEach(rule=>{
+              if(rule.match.some(k=>svc.includes(k))){
+                if(!rec.done[rule.id] || d>rec.done[rule.id]){ rec.done[rule.id]=d; marked++; }
+              }
+            });
+          }
+        }
+      }
+      SCR.log.push({name:f.name, ok:true,
+        info:(isPop?'Халық тізімі':'Қызметтер')+' · +'+ayFmt(added)+' пациент'+(marked?' · '+ayFmt(marked)+' скрининг':'')});
+    }catch(e){ SCR.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
+  }
+  scrRender();
+}
+
+function scrCompute(){
+  const today = new Date();
+  return SCR_RULES.map(rule=>{
+    let target=0, done=0;
+    const byUch={};
+    SCR.people.forEach(p=>{
+      const a = scrAge(p.birth, today);
+      if(a<rule.ageFrom || a>rule.ageTo) return;
+      if(rule.gender && p.gender!==rule.gender) return;
+      const u = p.uch || '—';
+      byUch[u] = byUch[u] || {target:0, done:0, due:[]};
+      target++; byUch[u].target++;
+      const last = p.done[rule.id];
+      const lim = new Date(today); lim.setFullYear(lim.getFullYear()-rule.years);
+      if(last && last>=lim){ done++; byUch[u].done++; }
+      else byUch[u].due.push({name:p.name, age:a, last:last||null});
+    });
+    return {rule, target, done, due:target-done, byUch};
+  });
+}
+
+function scrRender(){
+  const box = cmpEl('scrReport'); if(!box) return;
+  let html = cmpStatusPanel(SCR.log);
+  if(!SCR.people.size){ box.innerHTML = html; return; }
+
+  const res = scrCompute();
+  const period = (SCR.minDate && SCR.maxDate)
+    ? SCR.minDate.toLocaleDateString('ru-RU')+' – '+SCR.maxDate.toLocaleDateString('ru-RU') : '—';
+
+  html += `<div class="card" style="border-left:3px solid var(--warn)">
+    <div style="font-size:13px;color:var(--ink-2)">
+      <b>⚠️ Ережелер дәрігер растауын күтеді.</b> Жас аралығы мен кезеңділік
+      № ҚР ДСМ-174/2020 (өзг. №62/16.08.2024, №71/29.07.2025) негізіндегі <b>жоба</b>.
+      Ағымдағы редакцияны adilet.zan.kz-тен тексеріңіз.<br>
+      <b>📌 «Өткен»</b> — тек жүктелген кезеңде (${period}) орындалғандар.
+      Бұдан бұрын өткені көрінбейді, сондықтан «керек» саны — <b>жоғарғы шек</b>.
+      ${SCR.hasPop?'':'<br><b>ℹ️ Халық тізімі жүктелмеген</b> — нысаналы топ тек выгрузкада кездескендерден.'}
+    </div></div>`;
+
+  html += `<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Танылған пациент</div><div class="kpi-value">${ayFmt(SCR.people.size)}</div><div class="kpi-extra">${SCR.badIin?ayFmt(SCR.badIin)+' жол ЖСН танылмады':'ЖСН-нен жас/жыныс'}</div></div>`;
+  res.forEach(o=>{
+    const pct = o.target ? o.done/o.target : 0;
+    const cls = pct<0.3?'danger':(pct<0.7?'warn':'');
+    html += `<div class="kpi ${cls}"><div class="kpi-label">${o.rule.name.split('(')[0].trim()}</div>
+      <div class="kpi-value">${cmpPct(o.done,o.target)}</div>
+      <div class="kpi-extra">${ayFmt(o.due)} керек / ${ayFmt(o.target)} топ</div></div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="card"><div class="card-title">📋 Скрининг бойынша қорытынды</div>
+    <div style="overflow-x:auto"><table>
+    <tr><th>Скрининг</th><th>Нысаналы топ</th><th>Шарты</th><th>Өткен</th><th>Мерзімі жеткен</th><th>Қамту</th></tr>`;
+  res.forEach(o=>{
+    const g = o.rule.gender==='Ж'?'әйел':(o.rule.gender==='М'?'ер':'ер+әйел');
+    html += `<tr><td><b>${o.rule.name}</b></td>
+      <td>${ayFmt(o.target)}</td>
+      <td style="font-size:12px;color:var(--ink-2)">${o.rule.ageFrom}–${o.rule.ageTo} жас, ${g}<br>${o.rule.years} жылда 1 рет</td>
+      <td>${ayFmt(o.done)}</td>
+      <td><b>${ayFmt(o.due)}</b></td>
+      <td>${cmpPct(o.done,o.target)}</td></tr>`;
+  });
+  html += `</table></div></div>`;
+
+  /* Учаске бойынша — сан ғана (портал принципі: пациент аты жоқ) */
+  const uchs = new Set();
+  res.forEach(o=>Object.keys(o.byUch).forEach(u=>uchs.add(u)));
+  const uchList = [...uchs].sort();
+  if(uchList.length){
+    html += `<div class="card"><div class="card-title">📍 Учаске бойынша — мерзімі жеткендер саны</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">Мейіргерге басымдық — санмен. Нақты тізімді төмендегі батырмамен CSV етіп жүктеңіз (файл құрылғыда қалады).</div>
+      <div style="overflow-x:auto"><table><tr><th>Учаске</th>`;
+    res.forEach(o=>{ html += `<th>${o.rule.name.split('(')[0].trim()}</th>`; });
+    html += `<th>Барлығы</th></tr>`;
+    uchList.forEach(u=>{
+      let tot=0;
+      let row = `<tr><td><b>${u}</b></td>`;
+      res.forEach(o=>{
+        const n = o.byUch[u] ? o.byUch[u].due.length : 0;
+        tot += n;
+        row += `<td${n>0?' style="font-weight:600"':''}>${n?ayFmt(n):'—'}</td>`;
+      });
+      row += `<td><b>${ayFmt(tot)}</b></td></tr>`;
+      html += row;
+    });
+    html += `</table></div>
+      <button class="icon-btn" style="margin-top:10px" onclick="scrExportCsv()">📥 Жұмыс тізімін жүктеу (CSV)</button>
+      </div>`;
+  }
+
+  box.innerHTML = html;
+}
+
+/* Жұмыс тізімін CSV етіп жүктеу — тек браузерде, серверге бармайды */
+function scrExportCsv(){
+  const res = scrCompute();
+  const lines = ['Учаске;Скрининг;Аты-жөні;Жасы;Соңғы өткені'];
+  res.forEach(o=>{
+    Object.keys(o.byUch).sort().forEach(u=>{
+      o.byUch[u].due.forEach(d=>{
+        lines.push([u, o.rule.name, d.name||'—', d.age,
+          d.last ? d.last.toLocaleDateString('ru-RU') : 'мүлде жоқ'].join(';'));
+      });
+    });
+  });
+  const blob = new Blob(['\ufeff'+lines.join('\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'skrining_tizim_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function scrClear(){
+  SCR.people=new Map(); SCR.log=[]; SCR.hasPop=false; SCR.minDate=null; SCR.maxDate=null; SCR.badIin=0; SCR.totalRows=0;
+  cmpEl('scrReport').innerHTML='';
+  const el=cmpEl('scrFiles'); if(el) el.value='';
+}
+
+
+/* ============================================================
    📊 ЖҮКТЕМЕ МЕН БЕЛСЕНДІЛІК
    Дереккөз: Форма 39 (визит белсенділігі) + Прием по записи (дәрігер қабылдауы).
    Пациент дерегі ЖОҚ — агрегат. Түрі автоматты анықталады.
@@ -5189,6 +5457,7 @@ document.addEventListener('DOMContentLoaded', function(){
   bind('conFiles', conHandle); bind('refFiles', refHandle); bind('psyFiles', psyHandle);
   bind('schFiles', schHandle); bind('proFiles', proHandle); bind('actFiles', actHandle);
   bind('profFiles', profHandle);
+  bind('scrFiles', scrHandle);
   bind('workFiles', workHandle);
   if (typeof conInit==='function'){ conInit(); conRender(); }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
