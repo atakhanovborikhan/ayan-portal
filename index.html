@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.1</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.2</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4903,15 +4903,21 @@ function profRender(){
   };
   let _clin='';
 
-  // 1. Учаскеде 65+ мүлдем жоқ (барлық айда) — ең күшті сигнал
-  const _zero65 = L.uchastki.filter(u=>u.total>=10 && u.age65===0);
+  /* Педиатриялық учаскені ажырату: 65+ те, ЖФВ да ≈0 болса — бұл балалар учаскесі,
+     ересек науқастың жоқтығы олқылық емес. Мұндай учаскелер ересек салыстыруларға кірмейді. */
+  const _isPed = u => u.total>0 && (u.age65/u.total)<0.03 && (u.jfv/u.total)<0.05;
+  const _pedU  = L.uchastki.filter(_isPed);
+  const _adultU= L.uchastki.filter(u=>!_isPed(u));
+
+  // 1. Ересек учаскеде 65+ жоқ — шынайы олқылық (педиатриялықтар есепке алынбайды)
+  const _zero65 = _adultU.filter(u=>u.total>=10 && u.age65===0);
   if(_zero65.length){
     const allMonthsZero = _zero65.filter(u=>keys.every(k=>{
       const uu=(PROF.months[k].uchastki||[]).find(x=>x.name===u.name);
       return !uu || uu.age65===0;
     }));
     const tgt = allMonthsZero.length?allMonthsZero:_zero65;
-    const others = L.uchastki.filter(u=>u.total>0 && u.age65>0);
+    const others = _adultU.filter(u=>u.total>0 && u.age65>0);
     const rng = others.length ? Math.round(Math.min(...others.map(u=>u.age65/u.total*100)))+'–'+Math.round(Math.max(...others.map(u=>u.age65/u.total*100)))+'%' : '—';
     _clin += _cs('🚨','Учаскеде 65+ жастағы науқас Д-есепте жоқ','red',
       `${tgt.map(u=>`<strong>${u.name}</strong> — Д-есепте ${ayFmt(u.total)} науқас, оның 65+ жастағысы <strong style="color:#dc2626">0</strong>`).join('; ')} · басқа учаскелерде 65+ үлесі ${rng}${allMonthsZero.length?' · <strong>барлық '+keys.length+' айда нөл</strong>':''}`,
@@ -4920,7 +4926,7 @@ function profRender(){
   }
 
   // 2. Учаске арасындағы 65+ үлесінің айырмашылығы
-  const _withEld = L.uchastki.filter(u=>u.total>=10 && u.age65>0).map(u=>({n:u.name,p:u.age65/u.total*100}));
+  const _withEld = _adultU.filter(u=>u.total>=10 && u.age65>0).map(u=>({n:u.name,p:u.age65/u.total*100}));
   if(_withEld.length>=3){
     _withEld.sort((a,b)=>b.p-a.p);
     const hi=_withEld[0], lo=_withEld[_withEld.length-1];
@@ -4953,6 +4959,11 @@ function profRender(){
     }
   }
 
+  if(_pedU.length){
+    _clin += `<div style="padding:9px 11px;border-radius:9px;margin-bottom:9px;background:#eff6ff;border:1px solid #c7d2fe">
+      <div style="font-weight:600;font-size:12.5px;margin-bottom:3px">ℹ️ Педиатриялық учаске деп танылды</div>
+      <div style="font-size:12px;color:var(--ink)">${_pedU.map(u=>`<strong>${u.name}</strong> (Д-есепте ${ayFmt(u.total)})`).join(', ')} — 65+ те, ЖФВ да жоққа тән. Бұл учаскеде негізінен балалар мен жасөспірімдер тіркелген сияқты, сондықтан <strong>ересек көрсеткіштер бойынша салыстыруға кірмейді</strong>. Ондағы Д-есеп балалар патологиясы бойынша бағаланады.</div></div>`;
+  }
   if(_clin){
     html += `<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Клиникалық олқылықтар</div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Д-есеп — созылмалы науқасты <strong>тұрақты бақылау</strong> жүйесі. Төменде сол жүйедегі нақты олқылықтар.</div>
