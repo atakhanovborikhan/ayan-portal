@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.7</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.8</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1114,6 +1114,7 @@
       <input type="file" id="profFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
       <button class="icon-btn" style="margin-left:8px" onclick="profClear()">🗑 Тазалау</button>
     </div>
+    <div id="profStoreFlash"></div>
     <div id="profReport"></div>
   </section>
 
@@ -1129,6 +1130,7 @@
       <input type="file" id="scrFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
       <button class="icon-btn" style="margin-left:8px" onclick="scrClear()">🗑 Тазалау</button>
     </div>
+    <div id="scrStoreFlash"></div>
     <div id="scrReport"></div>
   </section>
 
@@ -1140,6 +1142,7 @@
       <input type="file" id="workFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
       <button class="icon-btn" style="margin-left:8px" onclick="workClear()">🗑 Тазалау</button>
     </div>
+    <div id="workStoreFlash"></div>
     <div id="workReport"></div>
   </section>
 
@@ -3487,6 +3490,46 @@ function detectAnomalies(series, k){ // series: [{period, value}], k=шекті�
     .map(s=>({period:s.period, value:s.value, z:((s.value-median)/sd).toFixed(1), dir:s.value>median?'жоғары':'төмен', median}));
 }
 
+
+/* ---- Профилактика агрегаты (учаске × сан; пациент дерегі ЖОҚ) ---- */
+function aggProf(monthData, key){
+  const u = monthData.uchastki || [];
+  const sum = f => u.reduce((a,x)=>a+(f(x)||0), 0);
+  return { period:key,
+    total:  sum(x=>x.total),  dyn:    sum(x=>x.dynObs),
+    age65:  sum(x=>x.age65),  age65obs:sum(x=>x.age65obs),
+    jfv:    sum(x=>x.jfv),    jfvobs: sum(x=>x.jfvObs),
+    uch_json: u.map(x=>({n:x.name, t:x.total, d:x.dynObs, a65:x.age65, a65o:x.age65obs, j:x.jfv, jo:x.jfvObs})) };
+}
+/* ---- Жүктеме агрегаты (визит саны, дәрігер жүктемесі; пациент дерегі ЖОҚ) ---- */
+function aggWork(key){
+  const v = (typeof WORK!=='undefined' && WORK.visits[key]) || {};
+  const a = (typeof WORK!=='undefined' && WORK.appts[key])  || {};
+  return { period:key,
+    clinic:+v.clinic||0, prevention:+v.prevention||0, disease:+v.disease||0, home:+v.home||0,
+    appts_total:+a.total||0,
+    spec_json: a.bySpec || {}, doc_json: a.byDoctor || {} };
+}
+/* ---- Скрининг агрегаты — ТЕК SCRQ жиынтығы.
+       SCR.people (ЖСН/аты-жөні/туған күні) ЕШҚАШАН жіберілмейді. ---- */
+function aggScr(key){
+  const out = {};
+  Object.entries((typeof SCRQ!=='undefined' && SCRQ.lists) || {}).forEach(([k,o])=>{
+    out[k] = { name:o.name, total:o.total, done:o.done, notDone:o.notDone, refuse:o.refuse,
+               expired:o.expired, interv:o.interv, detect:o.detect, toD:o.toD,
+               m45:o.m45, m45nb:o.m45noBiopsy, uchNotDone:o.byUchNotDone };
+  });
+  const S = Object.values(out);
+  return { period:key,
+    total:   S.reduce((a,o)=>a+o.total,0),
+    done:    S.reduce((a,o)=>a+o.done,0),
+    notdone: S.reduce((a,o)=>a+o.notDone,0),
+    detect:  S.reduce((a,o)=>a+o.detect,0),
+    tod:     S.reduce((a,o)=>a+o.toD,0),
+    m45nb:   S.reduce((a,o)=>a+(o.m45nb||0),0),
+    lists_json: out };
+}
+
 if (typeof module!=='undefined') module.exports = {trendForecast, detectAnomalies, aggProtocol, aggSchet, aggAkt, aggPsy, aggRef, storeAssertClean};
 /* ============================================================
    🔬 КӨП ФАЙЛДЫ САЛЫСТЫРУ — ОРТАҚ ЯДРО
@@ -3624,6 +3667,9 @@ const STORE_SECTIONS = {
   act: { server:'econ_akt',      label:'Акт', kind:'doc' },
   psy: { server:'audit_psy',     label:'Төлем жүйесі', kind:'xlsx' },
   ref: { server:'audit_ref',     label:'Сыртқы бағыттар', kind:'xlsx' },
+  prof:{ server:'clin_prof',     label:'Профилактика', kind:'xlsx' },
+  work:{ server:'clin_work',     label:'Жүктеме', kind:'xlsx' },
+  scr: { server:'clin_scr',      label:'Скрининг', kind:'xlsx' },
 };
 
 // Бет ашылғанда сервер дерегін жадыға тарту
@@ -3635,7 +3681,7 @@ async function storeInitAll(){
   // Әр бөлімге сервер айларын құю (тірі жүктемеген айлар да көрінсін)
   storeMergeIntoSections();
   // Қайта рендер
-  ['pro','sch','act','psy','ref'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
+  ['pro','sch','act','psy','ref','prof','work','scr'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
 }
@@ -3671,6 +3717,38 @@ function storeMergeIntoSections(){
     row.period=k;
     if(REF.months[k]) return;
     REF.months[k]={_agg:row, _fromServer:true};
+  });
+  // Профилактика (учаске агрегаты)
+  (SERVER_DATA.clin_prof||[]).forEach(row=>{
+    const k=_normPeriod(row.period); if(!k) return; row.period=k;
+    if (typeof PROF==='undefined' || PROF.months[k]) return;
+    const u=(row.uch_json||[]).map(x=>({name:x.n||'', total:+x.t||0, dynObs:+x.d||0,
+      age65:+x.a65||0, age65obs:+x.a65o||0, jfv:+x.j||0, jfvObs:+x.jo||0}));
+    if(u.length) PROF.months[k]={uchastki:u, _fromServer:true};
+  });
+  // Жүктеме
+  (SERVER_DATA.clin_work||[]).forEach(row=>{
+    const k=_normPeriod(row.period); if(!k) return; row.period=k;
+    if (typeof WORK==='undefined') return;
+    if(!WORK.visits[k] && (+row.clinic||+row.prevention)){
+      WORK.visits[k]={clinic:+row.clinic||0, prevention:+row.prevention||0, disease:+row.disease||0,
+                      primary:0, disp:0, home:+row.home||0, _fromServer:true};
+    }
+    if(!WORK.appts[k] && +row.appts_total){
+      WORK.appts[k]={byDoctor:row.doc_json||{}, bySpec:row.spec_json||{}, total:+row.appts_total||0, _fromServer:true};
+    }
+  });
+  // Скрининг (SCRQ агрегаты; пациент тізімі серверде ЖОҚ)
+  (SERVER_DATA.clin_scr||[]).forEach(row=>{
+    if (typeof SCRQ==='undefined' || Object.keys(SCRQ.lists).length) return;
+    const L=row.lists_json||{};
+    Object.entries(L).forEach(([k,o])=>{
+      SCRQ.lists[k]={name:o.name||k, total:+o.total||0, done:+o.done||0, notDone:+o.notDone||0,
+        refuse:+o.refuse||0, expired:+o.expired||0, interv:+o.interv||0, detect:+o.detect||0,
+        toD:+o.toD||0, m45:+o.m45||0, m45noBiopsy:+o.m45nb||0,
+        byUchNotDone:o.uchNotDone||{}, byUchTotal:{}, _fromServer:true};
+    });
+    if(Object.keys(L).length) SCRQ.period=_normPeriod(row.period)||SCRQ.period;
   });
   // Шарттар (period = жыл)
   (SERVER_DATA.econ_contract||[]).forEach(row=>{
@@ -3722,6 +3800,15 @@ async function storeAutoSaveXlsx(sec, key, monthData){
   try { await storeSave(cfg.server, payload); return {ok:true, key}; }
   catch(e){ return {ok:false, key, err:e.message}; }
 }
+
+// Дайын агрегатты сақтау (prof/work/scr үшін)
+async function storeAutoSaveAgg(sec, key, payload){
+  if (!storeConfigured()) return {ok:null};
+  const cfg = STORE_SECTIONS[sec]; if (!cfg) return {ok:null};
+  try { await storeSave(cfg.server, payload); return {ok:true, key}; }
+  catch(e){ return {ok:false, key, err:e.message}; }
+}
+
 // Сақтау қорытындысын рендерден КЕЙІН көрсету (рендер storeFlash-ты өшірмесін)
 window._saveResultsGlobal = {};
 function _flashSaveSummary(sec){
@@ -4019,6 +4106,7 @@ async function profReadXlsx(file){
   return XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
 }
 async function profHandle(files){
+  const _saved=[];
   for (const f of files){
     try {
       const rows = await profReadXlsx(f);
@@ -4041,9 +4129,12 @@ async function profHandle(files){
       PROF.months[period] = {uchastki};
       const totalPat = uchastki.reduce((a,u)=>a+u.total,0);
       PROF.log.push({name:f.name, ok:true, info:'Д-есеп · '+cmpMonLabel(period)+' · '+uchastki.length+' учаске · '+ayFmt(totalPat)+' науқас'});
+      _saved.push(await storeAutoSaveAgg('prof', period, aggProf(PROF.months[period], period)));
     } catch(e){ PROF.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
+  window._saveResultsGlobal['prof']=_saved;
   profRender();
+  _flashSaveSummary('prof');
 }
 function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl('profReport').innerHTML=''; const el=cmpEl('profFiles'); if(el) el.value=''; }
 
@@ -4059,7 +4150,7 @@ function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl
    Барлық 7 скринингте 0-15 бағандар бірдей. Клиникалық олқылықтарды өлшейді.
    Пациент дерегі (ИИН/ФИО) ЕШҚАШАН экранға шықпайды — тек агрегат.
    ============================================================ */
-const SCRQ = { lists:{}, log:[] };
+const SCRQ = { lists:{}, log:[], period:'' };
 const SCRQ_NAMES = [
   {re:/РМЖ/i,        name:'Сүт безі обыры (РМЖ)',        key:'rmzh'},
   {re:/РШМ/i,        name:'Жатыр мойны обыры (РШМ)',     key:'rshm'},
@@ -4076,6 +4167,8 @@ function scrqIsList(H){
 function scrqYes(v){ const s=String(v||'').trim().toLowerCase(); return !!s && s!=='0' && s!=='нет' && s!=='-' && s!=='—'; }
 function scrqParse(rows, hr, H, fname){
   const hit = SCRQ_NAMES.find(x=>x.re.test(fname)) || {name:fname.slice(0,30), key:'oth_'+Object.keys(SCRQ.lists).length};
+  const pm = String(fname).match(/_(\d{2})(\d{2})(\d{4})_/);
+  if(pm && !SCRQ.period) SCRQ.period = pm[3]+'-'+pm[2];   // кезең = файлдағы бастау айы
   const data = rows.slice(hr+1).filter(r=>String(r[3]||'').trim());
   const o = {name:hit.name, total:data.length, done:0, notDone:0, refuse:0, expired:0,
              interv:0, detect:0, toD:0, byUchNotDone:{}, byUchTotal:{}, m45:0, m45noBiopsy:0};
@@ -4285,7 +4378,13 @@ async function scrHandle(files){
         info:(isPop?'Халық тізімі':'Қызметтер')+' · +'+ayFmt(added)+' пациент'+(marked?' · '+ayFmt(marked)+' скрининг':'')});
     }catch(e){ SCR.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
+  // Серверге ТЕК скрининг агрегаты (SCRQ). Пациент тізімі (SCR.people) ЕШҚАШАН жіберілмейді.
+  if(Object.keys(SCRQ.lists).length){
+    const per = SCRQ.period || (new Date().getFullYear()+'-01');
+    window._saveResultsGlobal['scr'] = [await storeAutoSaveAgg('scr', per, aggScr(per))];
+  }
   scrRender();
+  _flashSaveSummary('scr');
 }
 
 function scrCompute(){
@@ -4311,7 +4410,7 @@ function scrCompute(){
 
 function scrRender(){
   const box = cmpEl('scrReport'); if(!box) return;
-  let html = cmpStatusPanel(SCR.log.concat(SCRQ.log));
+  let html = (typeof storePanel==='function'?storePanel('scr'):'') + cmpStatusPanel(SCR.log.concat(SCRQ.log));
   html += scrqRender();                       // 🔬 Скрининг сапасы (тізім файлдары)
   if(!SCR.people.size){ box.innerHTML = html; return; }
 
@@ -4437,6 +4536,7 @@ function workDetectType(rows){
   return '';
 }
 async function workHandle(files){
+  const _wsaved=[];
   for(const f of files){
     try{
       const rows=await workReadXlsx(f);
@@ -4464,16 +4564,19 @@ async function workHandle(files){
       } else {
         WORK.log.push({name:f.name,ok:false,info:'Түрі анықталмады (Форма 39 не Прием по записи емес)'});
       }
+      if(period) _wsaved.push(await storeAutoSaveAgg('work', period, aggWork(period)));
     }catch(e){ WORK.log.push({name:f.name,ok:false,info:'Қате: '+e.message}); }
   }
+  window._saveResultsGlobal['work']=_wsaved;
   workRender();
+  _flashSaveSummary('work');
 }
 function workClear(){ WORK.visits={}; WORK.appts={}; WORK.log=[]; cmpClearCharts('work'); cmpEl('workReport').innerHTML=''; const el=cmpEl('workFiles'); if(el)el.value=''; }
 
 function workRender(){
   cmpClearCharts('work');
   const box=cmpEl('workReport'); if(!box) return;
-  let html=cmpStatusPanel(WORK.log);
+  let html=(typeof storePanel==='function'?storePanel('work'):'') + cmpStatusPanel(WORK.log);
   const vKeys=Object.keys(WORK.visits).sort();
   const aKeys=Object.keys(WORK.appts).sort();
   if(!vKeys.length && !aKeys.length){ box.innerHTML=html; return; }
@@ -4529,7 +4632,7 @@ function workRender(){
 function profRender(){
   cmpClearCharts('prof');
   const box = cmpEl('profReport'); if(!box) return;
-  let html = cmpStatusPanel(PROF.log);
+  let html = (typeof storePanel==='function'?storePanel('prof'):'') + cmpStatusPanel(PROF.log);
   const keys = Object.keys(PROF.months).sort();
   if(!keys.length){ box.innerHTML = html; return; }
 
