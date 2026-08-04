@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.6</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.7</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4053,6 +4053,114 @@ function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl
    Ережелер: № ҚР ДСМ-174/2020 (өзг. №62/2024, №71/2025) — ЖОБА,
    дәрігер растауы қажет. Түзету: төмендегі SCR_RULES массиві.
    ============================================================ */
+
+/* ============================================================
+   🔬 СКРИНИНГ САПАСЫ — «Скрининг ... - список» файлдары
+   Барлық 7 скринингте 0-15 бағандар бірдей. Клиникалық олқылықтарды өлшейді.
+   Пациент дерегі (ИИН/ФИО) ЕШҚАШАН экранға шықпайды — тек агрегат.
+   ============================================================ */
+const SCRQ = { lists:{}, log:[] };
+const SCRQ_NAMES = [
+  {re:/РМЖ/i,        name:'Сүт безі обыры (РМЖ)',        key:'rmzh'},
+  {re:/РШМ/i,        name:'Жатыр мойны обыры (РШМ)',     key:'rshm'},
+  {re:/КРР/i,        name:'Колоректалды обыр (КРР)',     key:'krr'},
+  {re:/Глаукома/i,   name:'Глаукома',                    key:'glau'},
+  {re:/АГ|ИБС/i,     name:'АГ / ЖИА (жүрек-тамыр)',      key:'agibs'},
+  {re:/СД/i,         name:'Қант диабеті (СД)',           key:'sd'},
+  {re:/ЦВЗ/i,        name:'Цереброваскулярлық (ЦВЗ)',    key:'cvz'},
+];
+function scrqIsList(H){
+  const t=H.map(h=>String(h).toLowerCase()).join('|');
+  return /мо начавшая осмотр/.test(t) || (/дата начала/.test(t) && /завершивших скрининг/.test(t));
+}
+function scrqYes(v){ const s=String(v||'').trim().toLowerCase(); return !!s && s!=='0' && s!=='нет' && s!=='-' && s!=='—'; }
+function scrqParse(rows, hr, H, fname){
+  const hit = SCRQ_NAMES.find(x=>x.re.test(fname)) || {name:fname.slice(0,30), key:'oth_'+Object.keys(SCRQ.lists).length};
+  const data = rows.slice(hr+1).filter(r=>String(r[3]||'').trim());
+  const o = {name:hit.name, total:data.length, done:0, notDone:0, refuse:0, expired:0,
+             interv:0, detect:0, toD:0, byUchNotDone:{}, byUchTotal:{}, m45:0, m45noBiopsy:0};
+  // РМЖ үшін М4-М5 бағандарын табу
+  const idxM45=[], idxBio=[];
+  H.forEach((h,i)=>{ const s=String(h).toLowerCase();
+    if(/м4-м5|м4–м5/.test(s)) idxM45.push(i);
+    if(/трепанобиопси/.test(s)) idxBio.push(i);
+  });
+  data.forEach(r=>{
+    const u=String(r[1]||'—').trim();
+    o.byUchTotal[u]=(o.byUchTotal[u]||0)+1;
+    if(scrqYes(r[9])) o.done++; else { o.notDone++; o.byUchNotDone[u]=(o.byUchNotDone[u]||0)+1; }
+    if(scrqYes(r[10])) o.refuse++;
+    if(scrqYes(r[11])) o.expired++;
+    if(scrqYes(r[8]))  o.interv++;
+    if(scrqYes(r[12])||scrqYes(r[13])) o.detect++;
+    if(scrqYes(r[14])) o.toD++;
+    if(idxM45.length && idxM45.some(i=>scrqYes(r[i]))){
+      o.m45++;
+      if(!idxBio.some(i=>scrqYes(r[i]))) o.m45noBiopsy++;
+    }
+  });
+  SCRQ.lists[hit.key]=o;
+  SCRQ.log.push({name:fname, ok:true, info:o.name+' · '+ayFmt(o.total)+' адам · аяқтаған '+ayFmt(o.done)});
+}
+function scrqRender(){
+  const ks=Object.keys(SCRQ.lists); if(!ks.length) return '';
+  const L=ks.map(k=>SCRQ.lists[k]).filter(o=>o.total>0);
+  if(!L.length) return '';
+  const sum=f=>L.reduce((a,o)=>a+f(o),0);
+  const totDetect=sum(o=>o.detect), totToD=sum(o=>o.toD), totNotDone=sum(o=>o.notDone), totM45nb=sum(o=>o.m45noBiopsy);
+
+  let h='<div class="card" style="border-color:#c7d2fe"><div class="card-title">🔬 Скрининг сапасы — клиникалық олқылықтар</div>';
+  h+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">«Скрининг ... - список» файлдары бойынша. Скринингтің мәні — бастау емес, <strong>аяқтау және табылғанды бақылауға алу</strong>.</div>';
+
+  // Жиынтық кесте
+  h+='<div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Скрининг</th><th>Бастаған</th><th>Аяқтаған</th><th>Аяқталмаған</th><th>Бас тартқан</th><th>Анықталды</th><th>Д-есепке</th></tr>';
+  L.forEach(o=>{
+    const gap=o.detect>0 && o.toD===0;
+    h+=`<tr><td><b>${o.name}</b></td><td>${ayFmt(o.total)}</td><td>${ayFmt(o.done)} <span style="color:var(--ink-2)">(${cmpPct(o.done,o.total)})</span></td>`
+     + `<td style="color:${o.notDone?'#b45309':'inherit'}">${ayFmt(o.notDone)}</td><td>${ayFmt(o.refuse)}</td>`
+     + `<td><b>${ayFmt(o.detect)}</b></td><td style="color:${gap?'#dc2626':'inherit'}"><b>${ayFmt(o.toD)}</b>${gap?' 🔴':''}</td></tr>`;
+  });
+  h+='</table></div>';
+
+  const cs=(icon,title,tone,evidence,sentence,note)=>{
+    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
+    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    return `<div style="padding:11px;border-radius:9px;margin-top:9px;background:${bg};border:1px solid ${bd}">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
+      <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
+      ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
+  };
+
+  // 1. М4-М5 биопсиясыз (ең өткір)
+  if(totM45nb>0){
+    const o=L.find(x=>x.m45>0)||{m45:0};
+    h+=cs('🚨','Маммографияда М4-М5, бірақ биопсия жоқ','red',
+      `М4-М5 нәтижесі: <strong>${ayFmt(o.m45)}</strong> әйел · оның <strong style="color:#dc2626;font-size:15px">${ayFmt(totM45nb)}</strong>-інде трепанобиопсия белгіленбеген`,
+      `Бұл ${ayFmt(totM45nb)} әйелдің маммограммасы М4-М5 — қатерлі ісікке күдік. Хаттама бойынша биопсия/онкологқа жолдама міндетті. Жүйеде ол белгіленбеген: биопсия жасалды ма, әлде әйел бақылаудан шығып кетті ме?`,
+      '⚠️ Бұл дереу тексеруді талап етеді. Мүмкін биопсия онкодиспансерде жасалып, осы жүйеге жазылмаған — бірақ оны растау керек.');
+  }
+  // 2. Анықталды, бірақ Д-есепке алынбады
+  if(totDetect>totToD){
+    h+=cs('🔴','Скринингте анықталды — Д-есепке алынбады','red',
+      `Анықталды: <strong>${ayFmt(totDetect)}</strong> · Д-есепке алынды: <strong>${ayFmt(totToD)}</strong> · алшақтық: <strong style="color:#dc2626">${ayFmt(totDetect-totToD)}</strong>`,
+      `Скринингте ${ayFmt(totDetect)} адамда патология анықталды, бірақ тек ${ayFmt(totToD)}-і Д-есепке алынған. Скринингтің мәні — табу емес, тапқаннан кейін бақылауға алу. Қалғандары бақылаусыз қалды ма, әлде Д-есеп жүйеде тіркелмеді ме?`,
+      'Екі ықтималдық: (1) нақты клиникалық олқылық, (2) құжаттау олқылығы. Екеуі де түзетуді талап етеді — біріншісі пациент үшін, екіншісі СКПН/аудит үшін.');
+  }
+  // 3. Бастаған, бірақ аяқтамаған
+  if(totNotDone>0){
+    const uchAll={};
+    L.forEach(o=>Object.entries(o.byUchNotDone).forEach(([u,n])=>uchAll[u]=(uchAll[u]||0)+n));
+    const top=Object.entries(uchAll).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    h+=cs('⏳','Скринингті бастаған, бірақ аяқтамағандар','yellow',
+      `Аяқталмаған: <strong style="color:#b45309;font-size:15px">${ayFmt(totNotDone)}</strong> адам · учаске бойынша: ${top.map(([u,n])=>`${u.replace(' общей практики','-уч')} (${n})`).join(', ')}`,
+      `Бұл ${ayFmt(totNotDone)} адам скринингті бастады, бірақ аяқтамады. Аяқталмаған скрининг — нәтижесі жоқ скрининг: ресурс жұмсалды, клиникалық пайда нөл. Оларды шақырып, аяқтау керек.`,
+      'Мейіргерге нақты тапсырма: осы учаскелердегі аяқталмаған скринингтерді ДамуМедтен тауып, пациенттерді шақыру.');
+  }
+  h+='</div>';
+  return h;
+}
+
 const SCR_RULES = [
   { id:'colo',  name:'Колоректалды обыр (жасырын қан)', gender:null, ageFrom:50, ageTo:76, years:2,
     match:['скрытой крови в кале','скрытую кровь','гемокульт'] },
@@ -4113,6 +4221,8 @@ async function scrHandle(files){
         if((rows[i]||[]).filter(x=>String(x).trim()).length>=5){ hr=i; break; }
       }
       const H = rows[hr]||[];
+      /* «Скрининг ... - список» файлы ма? — бөлек модуль өңдейді */
+      if(scrqIsList(H)){ scrqParse(rows, hr, H, f.name); continue; }
       const iIin = scrIdx(H,'иин');
       if(iIin<0){ SCR.log.push({name:f.name, ok:false, info:'ЖСН бағаны жоқ — бұл файл жарамайды'}); continue; }
       const iNm  = scrIdx(H,'фио пациента','фио');
@@ -4201,7 +4311,8 @@ function scrCompute(){
 
 function scrRender(){
   const box = cmpEl('scrReport'); if(!box) return;
-  let html = cmpStatusPanel(SCR.log);
+  let html = cmpStatusPanel(SCR.log.concat(SCRQ.log));
+  html += scrqRender();                       // 🔬 Скрининг сапасы (тізім файлдары)
   if(!SCR.people.size){ box.innerHTML = html; return; }
 
   const res = scrCompute();
@@ -4294,6 +4405,7 @@ function scrExportCsv(){
 
 function scrClear(){
   SCR.people=new Map(); SCR.log=[]; SCR.hasPop=false; SCR.minDate=null; SCR.maxDate=null; SCR.badIin=0; SCR.totalRows=0;
+  SCRQ.lists={}; SCRQ.log=[];
   cmpEl('scrReport').innerHTML='';
   const el=cmpEl('scrFiles'); if(el) el.value='';
 }
