@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.2</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.3</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -879,6 +879,19 @@
 
     <div class="salary-result-card" id="salaryResult" style="display:none;">
       <!-- JS толтырады -->
+    </div>
+
+    <div class="card">
+      <div class="card-title">📚 Есептеу тарихы (<span id="salHistCount">0</span>)</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">
+        Сақталған есептеулер <strong>тек осы құрылғыда</strong> тұрады (браузер жады). Серверге жіберілмейді — еңбекақы дерегі корпоративтік құпия.
+        Браузер деректерін тазаласаңыз немесе басқа құрылғыдан кірсеңіз — тарих көрінбейді. Сақтап қалу үшін CSV-ге шығарыңыз.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="icon-btn" onclick="salHistExport()" style="font-size:12px">📥 CSV жүктеу</button>
+        <button class="icon-btn" onclick="salHistClear()" style="font-size:12px;color:#dc2626;border-color:#f3b4b4">🗑 Барлық тарихты өшіру</button>
+      </div>
+      <div id="salHistBody"></div>
     </div>
 
     <div class="card">
@@ -2018,6 +2031,15 @@ function initSalaryCalc() {
       </div>
     `;
 
+    html_ += `
+      <div style="margin-top:14px;padding:11px 12px;background:var(--bg-card-2);border-radius:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:200px">
+          <label class="form-label" style="font-size:11px">Белгі (міндетті емес — мыс. «1-уч мейіргері», «наурыз»)</label>
+          <input type="text" class="form-input" id="salHistNote" placeholder="Белгі" style="font-size:12px">
+        </div>
+        <button class="icon-btn" onclick="salHistAdd()" style="font-size:12.5px">💾 Тарихқа сақтау</button>
+      </div>`;
+
     resultEl.innerHTML = html_;
     resultEl.style.display = 'block';
 
@@ -2030,6 +2052,99 @@ function initSalaryCalc() {
       timestamp: new Date().toLocaleString('ru-RU')
     };
   }
+}
+
+
+/* ============================================================
+   📚 АЙЛЫҚ ЕСЕПТЕУ ТАРИХЫ
+   Сақтау орны: осы құрылғының localStorage-і. Серверге ЕШҚАШАН жіберілмейді —
+   еңбекақы дерегі корпоративтік құпия (1-ереже).
+   ============================================================ */
+const SALHIST_KEY = 'ayan_salary_history_v1';
+function salHistLoad(){ try{ const r=localStorage.getItem(SALHIST_KEY); return r?JSON.parse(r):[]; }catch(e){ return []; } }
+function salHistStore(arr){
+  try{ localStorage.setItem(SALHIST_KEY, JSON.stringify(arr)); return true; }
+  catch(e){ alert('Сақталмады (жад толы болуы мүмкін): '+e.message); return false; }
+}
+function salHistAdd(){
+  const c = window._lastSalaryCalc;
+  if(!c){ alert('Алдымен есептеу жасаңыз'); return; }
+  const noteEl = document.getElementById('salHistNote');
+  const note = noteEl ? String(noteEl.value||'').trim() : '';
+  const arr = salHistLoad();
+  arr.unshift({
+    id: 'h'+Date.now()+Math.random().toString(36).slice(2,6),
+    ts: new Date().toISOString(),
+    tsLabel: c.timestamp || new Date().toLocaleString('ru-RU'),
+    note,
+    position: c.position||'', experience: c.experience||'', stavki: c.stavki||1,
+    doplaty: (c.checkedDoplaty||[]).map(d=>d.name_kz),
+    gross: Math.round(c.gross||0),
+    net: Math.round((c.tax&&c.tax.net)||0),
+    employee: Math.round((c.tax&&c.tax.totalEmployee)||0),
+    employer: Math.round((c.tax&&c.tax.totalEmployer)||0),
+    fund: Math.round((c.tax&&c.tax.fundTotal)||0)
+  });
+  if(arr.length>200) arr.length=200;          // шектеу
+  if(salHistStore(arr)){ if(noteEl) noteEl.value=''; salHistRender(); }
+}
+function salHistDelete(id){
+  const arr=salHistLoad(); const it=arr.find(x=>x.id===id);
+  if(!it) return;
+  if(!confirm('Осы жазбаны өшіру?\n\n'+(it.note?it.note+' · ':'')+it.position+'\n'+it.tsLabel+'\nТаза: '+ayFmt(it.net)+' тг')) return;
+  salHistStore(arr.filter(x=>x.id!==id)); salHistRender();
+}
+function salHistClear(){
+  const n=salHistLoad().length;
+  if(!n){ alert('Тарих бос'); return; }
+  if(!confirm('Тарихтағы '+n+' жазбаның БӘРІН өшіру?\n\nБұл әрекетті қайтару мүмкін емес.')) return;
+  if(!confirm('Растаңыз: '+n+' жазба біржола өшіріледі.')) return;
+  salHistStore([]); salHistRender();
+}
+function salHistExport(){
+  const arr=salHistLoad();
+  if(!arr.length){ alert('Тарих бос'); return; }
+  const head=['Күні','Белгі','Лауазым','Стаж','Ставка','Қосымшалар','Брутто','Ұстау','Таза','Жұмыс беруші','Қор шығыны'];
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.map(esc).join(';')];
+  arr.forEach(x=>lines.push([x.tsLabel,x.note,x.position,x.experience,x.stavki,(x.doplaty||[]).join(', '),x.gross,x.employee,x.net,x.employer,x.fund].map(esc).join(';')));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='Ailyq_esepteu_tarihy_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function salHistRender(){
+  const box=document.getElementById('salHistBody'); if(!box) return;
+  const arr=salHistLoad();
+  const cnt=document.getElementById('salHistCount');
+  if(cnt) cnt.textContent=arr.length;
+  if(!arr.length){
+    box.innerHTML='<div style="font-size:12.5px;color:var(--ink-3);padding:10px 2px">Тарих бос. Есептеу жасап, «💾 Тарихқа сақтау» батырмасын басыңыз.</div>';
+    return;
+  }
+  const tot=arr.reduce((a,x)=>({g:a.g+x.gross,n:a.n+x.net,f:a.f+x.fund}),{g:0,n:0,f:0});
+  let h=`<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+    <div>Жазба: <strong>${arr.length}</strong></div>
+    <div>Брутто Σ: <strong>${ayFmt(tot.g)}</strong> тг</div>
+    <div>Таза Σ: <strong>${ayFmt(tot.n)}</strong> тг</div>
+    <div>Қор шығыны Σ: <strong style="color:var(--accent)">${ayFmt(tot.f)}</strong> тг</div>
+  </div>`;
+  h+='<div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Күні</th><th>Белгі</th><th>Лауазым</th><th>Ставка</th><th>Брутто</th><th>Таза</th><th>Қор шығыны</th><th></th></tr>';
+  arr.forEach(x=>{
+    h+=`<tr>
+      <td style="white-space:nowrap">${x.tsLabel||''}</td>
+      <td>${x.note||'<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${x.position||''}${x.doplaty&&x.doplaty.length?`<div style="font-size:10.5px;color:var(--ink-3)">+${x.doplaty.length} қосымша</div>`:''}</td>
+      <td style="text-align:center">${x.stavki}</td>
+      <td>${ayFmt(x.gross)}</td>
+      <td><strong>${ayFmt(x.net)}</strong></td>
+      <td>${ayFmt(x.fund)}</td>
+      <td><button class="icon-btn" style="font-size:11px;padding:2px 7px" onclick="salHistDelete('${x.id}')" title="Осы жазбаны өшіру">✖</button></td>
+    </tr>`;
+  });
+  h+='</table></div>';
+  box.innerHTML=h;
 }
 
 // СКПН — учаске КПН тиімділігіне сай авто-есеп
@@ -5994,6 +6109,7 @@ document.addEventListener('DOMContentLoaded', function(){
   bind('workFiles', workHandle);
   bind('nosvcFiles', nosvcHandle);
   if (typeof conInit==='function'){ conInit(); conRender(); }
+  if (typeof salHistRender==='function'){ try{ salHistRender(); }catch(e){} }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
   ['pro','sch','act','psy','ref'].forEach(function(sec){ var fn=window[sec+'Render']; if(fn) try{fn();}catch(e){} });
   // Сервер дерегін бет жүктелгенде АВТОМАТТЫ тартпаймыз (бет лезде ашылсын, қатпасын).
