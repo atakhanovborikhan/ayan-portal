@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v12.8</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.0</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -621,6 +621,7 @@
     <button class="tab" data-tab="prof">🩺 Профилактика</button>
     <button class="tab" data-tab="scr">🔬 Скрининг</button>
     <button class="tab" data-tab="work">📊 Жүктеме</button>
+    <button class="tab" data-tab="nosvc">🚪 Қызмет алмағандар</button>
     <button class="tab" data-tab="doctors">👨‍⚕️ Дәрігерлер</button>
     <button class="tab" data-tab="errors">⚠️ Қателер</button>
     <button class="tab" data-tab="rec">💡 Кеңестер</button>
@@ -1144,6 +1145,18 @@
     </div>
     <div id="workStoreFlash"></div>
     <div id="workReport"></div>
+  </section>
+
+  <section class="section" id="nosvc">
+    <div class="section-head"><h1 class="section-title">Қызмет алмаған пациенттер</h1>
+      <div class="section-sub">«Список пациентов, не получавших услуги ПМСП» — тіркелген, КПН төленеді, бірақ бірде-бір қызмет алмағандар. Учаске файлдарын бірге жүкте. Экранға тек агрегат шығады.</div></div>
+    <div class="card">
+      <div class="card-title">📂 Файлдарды жүктеу (учаске бойынша, бірнешеу)</div>
+      <input type="file" id="nosvcFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="nosvcClear()">🗑 Тазалау</button>
+    </div>
+    <div id="nosvcStoreFlash"></div>
+    <div id="nosvcReport"></div>
   </section>
 
   <section class="section" id="psy">
@@ -3670,6 +3683,7 @@ const STORE_SECTIONS = {
   prof:{ server:'clin_prof',     label:'Профилактика', kind:'xlsx' },
   work:{ server:'clin_work',     label:'Жүктеме', kind:'xlsx' },
   scr: { server:'clin_scr',      label:'Скрининг', kind:'xlsx' },
+  nosvc:{server:'clin_nosvc',    label:'Қызмет алмағандар', kind:'xlsx' },
 };
 
 // Бет ашылғанда сервер дерегін жадыға тарту
@@ -3681,7 +3695,7 @@ async function storeInitAll(){
   // Әр бөлімге сервер айларын құю (тірі жүктемеген айлар да көрінсін)
   storeMergeIntoSections();
   // Қайта рендер
-  ['pro','sch','act','psy','ref','prof','work','scr'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
+  ['pro','sch','act','psy','ref','prof','work','scr','nosvc'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
 }
@@ -3749,6 +3763,15 @@ function storeMergeIntoSections(){
         byUchNotDone:o.uchNotDone||{}, byUchTotal:{}, _fromServer:true};
     });
     if(Object.keys(L).length) SCRQ.period=_normPeriod(row.period)||SCRQ.period;
+  });
+  // Қызмет алмағандар
+  (SERVER_DATA.clin_nosvc||[]).forEach(row=>{
+    if (typeof NOSVC==='undefined' || NOSVC.total) return;
+    NOSVC.total=+row.total||0; NOSVC.noPhone=+row.unreach||0;
+    NOSVC.uchDetail=row.uch_json||{}; NOSVC.byAge=row.age_json||{};
+    NOSVC.byIns=row.ins_json||{}; NOSVC.byAttachYear=row.year_json||{};
+    NOSVC.byUch=Object.fromEntries(Object.entries(NOSVC.uchDetail).map(([k,v])=>[k,v.total||0]));
+    NOSVC.period=_normPeriod(row.period)||'';
   });
   // Шарттар (period = жыл)
   (SERVER_DATA.econ_contract||[]).forEach(row=>{
@@ -4406,6 +4429,222 @@ function scrCompute(){
     });
     return {rule, target, done, due:target-done, byUch};
   });
+}
+
+
+/* ============================================================
+   🚪 ҚЫЗМЕТ АЛМАҒАНДАР — «Список пациентов, не получавших услуги ПМСП»
+   КПН негізі: тіркелген, ақша келеді, бірақ байланыс жоқ.
+   Пациент дерегі (ЖСН/аты-жөні/телефон/мекенжай) браузерден шықпайды,
+   экранға да, серверге де ТЕК агрегат барады.
+   ============================================================ */
+const NOSVC = { period:'', total:0, byUch:{}, byAge:{}, byIns:{}, noPhone:0,
+                byAttachYear:{}, uchDetail:{}, log:[],
+                /* people — ТЕК браузер жадында, мейіргердің CSV жұмыс парағы үшін.
+                   aggNosvc() бұл өрісті ЕШҚАШАН алмайды → серверге кетпейді. */
+                people:[] };
+const NOSVC_AGES = ['0-4','5-17','18-39','40-64','65+'];
+
+function nosvcPeriod(name){ const m=String(name).match(/_(\d{2})(\d{2})(\d{4})_/); return m?m[3]+'-'+m[2]:''; }
+function nosvcDate(v){ const m=String(v||'').match(/(\d{2})\.(\d{2})\.(\d{4})/); return m?new Date(+m[3],+m[2]-1,+m[1]):null; }
+
+async function nosvcHandle(files){
+  const saved=[];
+  for(const f of files){
+    try{
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+      let hr=-1;
+      for(let i=0;i<6;i++){ const v=(rows[i]||[]).map(x=>String(x).toLowerCase());
+        if(v.some(x=>x.includes('иин')) && v.some(x=>x.includes('участок'))){ hr=i; break; } }
+      if(hr<0){ NOSVC.log.push({name:f.name, ok:false, info:'Бұл «не получавших услуги ПМСП» форматы емес'}); continue; }
+      const H=rows[hr].map(x=>String(x).toLowerCase());
+      const ci={ uch:H.findIndex(h=>h.includes('участок')), iin:H.findIndex(h=>h.includes('иин')),
+                 dob:H.findIndex(h=>h.includes('рождения')), att:H.findIndex(h=>h.includes('прикрепления к')),
+                 tel:H.findIndex(h=>h.includes('телефон')), ins:H.findIndex(h=>h.includes('застрахован')) };
+      const per=nosvcPeriod(f.name); if(per) NOSVC.period=per;
+      const NOW=new Date();
+      let added=0;
+      rows.slice(hr+1).forEach(r=>{
+        if(ci.iin<0 || !String(r[ci.iin]||'').trim()) return;
+        added++; NOSVC.total++;
+        const u=ayClean(r[ci.uch])||'—';
+        NOSVC.byUch[u]=(NOSVC.byUch[u]||0)+1;
+        const d=NOSVC.uchDetail[u]=NOSVC.uchDetail[u]||{total:0,kids:0,eld:0,noPhone:0,unins:0,old:0};
+        d.total++;
+        // Жас
+        const b=ci.dob>=0?nosvcDate(r[ci.dob]):null;
+        if(b){ const age=(NOW-b)/(365.25*864e5);
+          const g=age<5?'0-4':age<18?'5-17':age<40?'18-39':age<65?'40-64':'65+';
+          NOSVC.byAge[g]=(NOSVC.byAge[g]||0)+1;
+          if(g==='0-4') d.kids++;
+          if(g==='65+') d.eld++;
+        }
+        // Телефон
+        if(ci.tel<0 || !String(r[ci.tel]||'').trim()){ NOSVC.noPhone++; d.noPhone++; }
+        // Сақтандыру
+        const ins=ayClean(r[ci.ins])||'—';
+        NOSVC.byIns[ins]=(NOSVC.byIns[ins]||0)+1;
+        if(/не\s*застрахован/i.test(ins)){ d.unins++; }
+        // Тіркелген жылы
+        const a=ci.att>=0?nosvcDate(r[ci.att]):null;
+        if(a){ const y=String(a.getFullYear()); NOSVC.byAttachYear[y]=(NOSVC.byAttachYear[y]||0)+1;
+          if(a.getFullYear() < NOW.getFullYear()) d.old++; }
+        // Мейіргер жұмыс парағы үшін (браузерде ғана)
+        const _ph=ci.tel>=0?ayClean(r[ci.tel]):'';
+        const _ag=b?((NOW-b)/(365.25*864e5)):null;
+        const _grp=_ag===null?'':(_ag<5?'0-4':_ag<18?'5-17':_ag<40?'18-39':_ag<65?'40-64':'65+');
+        NOSVC.people.push({ uch:u, fio:ayClean(r[2])||'', iin:String(r[ci.iin]||'').trim(),
+          dob:ci.dob>=0?ayClean(r[ci.dob]):'', grp:_grp, phone:_ph,
+          ins:ayClean(r[ci.ins])||'', att:ci.att>=0?ayClean(r[ci.att]):'',
+          pr:(_grp==='0-4'?1:_grp==='65+'?2:(a&&a.getFullYear()<NOW.getFullYear())?3:4) });
+      });
+      NOSVC.log.push({name:f.name, ok:true, info:'+'+ayFmt(added)+' пациент'});
+    }catch(e){ NOSVC.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
+  }
+  if(NOSVC.total){
+    const per=NOSVC.period || (new Date().getFullYear()+'-01');
+    saved.push(await storeAutoSaveAgg('nosvc', per, aggNosvc(per)));
+    window._saveResultsGlobal['nosvc']=saved;
+  }
+  nosvcRender();
+  _flashSaveSummary('nosvc');
+}
+function nosvcClear(){
+  NOSVC.period=''; NOSVC.total=0; NOSVC.byUch={}; NOSVC.byAge={}; NOSVC.byIns={};
+  NOSVC.noPhone=0; NOSVC.byAttachYear={}; NOSVC.uchDetail={}; NOSVC.log=[]; NOSVC.people=[];
+  cmpClearCharts('nosvc'); const b=cmpEl('nosvcReport'); if(b) b.innerHTML='';
+  const el=cmpEl('nosvcFiles'); if(el) el.value='';
+}
+function aggNosvc(key){
+  return { period:key, total:NOSVC.total, unreach:NOSVC.noPhone,
+    kids04:NOSVC.byAge['0-4']||0, eld65:NOSVC.byAge['65+']||0,
+    uninsured:Object.entries(NOSVC.byIns).filter(([k])=>/не\s*застрахован/i.test(k)).reduce((a,[,v])=>a+v,0),
+    uch_json:NOSVC.uchDetail, age_json:NOSVC.byAge, ins_json:NOSVC.byIns, year_json:NOSVC.byAttachYear };
+}
+
+
+/* CSV — мейіргердің шақыру парағы. ТЕК браузерде жасалады, серверге ешқашан жіберілмейді. */
+function nosvcExportCsv(uchFilter){
+  if(!NOSVC.people.length){ alert('Алдымен файлдарды жүкте'); return; }
+  const PRI={1:'1 — 0-4 жас (шұғыл)',2:'2 — 65+',3:'3 — өткен жылдан бері',4:'4 — кезекті'};
+  let rows=NOSVC.people.slice();
+  if(uchFilter) rows=rows.filter(p=>p.uch===uchFilter);
+  rows.sort((a,b)=> a.pr-b.pr || a.uch.localeCompare(b.uch) || a.fio.localeCompare(b.fio));
+  const head=['Басымдық','Учаске','Аты-жөні','ЖСН','Туған күні','Жас тобы','Телефон','Сақтандыру','Тіркелген күні','Байланысқа шықты (белгі)'];
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.map(esc).join(';')];
+  rows.forEach(p=>lines.push([PRI[p.pr]||p.pr,p.uch,p.fio,p.iin,p.dob,p.grp,p.phone||'— телефон жоқ',p.ins,p.att,''].map(esc).join(';')));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='Qyzmet_almagandar'+(uchFilter?'_'+uchFilter.replace(/[^0-9]/g,''):'')+'_'+(NOSVC.period||'')+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+function nosvcRender(){
+  cmpClearCharts('nosvc');
+  const box=cmpEl('nosvcReport'); if(!box) return;
+  let html=(typeof storePanel==='function'?storePanel('nosvc'):'')+cmpStatusPanel(NOSVC.log);
+  if(!NOSVC.total){ box.innerHTML=html; return; }
+
+  const T=NOSVC.total, kids=NOSVC.byAge['0-4']||0, eld=NOSVC.byAge['65+']||0;
+  const unins=Object.entries(NOSVC.byIns).filter(([k])=>/не\s*застрахован/i.test(k)).reduce((a,[,v])=>a+v,0);
+  const oldAtt=Object.entries(NOSVC.byAttachYear).filter(([y])=>+y<new Date().getFullYear()).reduce((a,[,v])=>a+v,0);
+
+  html+=`<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Қызмет алмағандар</div><div class="kpi-value">${ayFmt(T)}</div><div class="kpi-extra">${Object.keys(NOSVC.byUch).length} учаске</div></div>
+    <div class="kpi warn"><div class="kpi-label">0–4 жас балалар</div><div class="kpi-value">${ayFmt(kids)}</div><div class="kpi-extra">${cmpPct(kids,T)}</div></div>
+    <div class="kpi"><div class="kpi-label">65 жас және үлкен</div><div class="kpi-value">${ayFmt(eld)}</div><div class="kpi-extra">${cmpPct(eld,T)}</div></div>
+    <div class="kpi ${NOSVC.noPhone/T>0.2?'warn':''}"><div class="kpi-label">Телефоны жоқ</div><div class="kpi-value">${ayFmt(NOSVC.noPhone)}</div><div class="kpi-extra">${cmpPct(NOSVC.noPhone,T)} — шақыру мүмкін емес</div></div>
+  </div>`;
+
+  const cs=(icon,title,tone,evidence,sentence,note)=>{
+    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
+    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
+      <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Мейіргерге/дәрігерге:</strong> «${sentence}»</div>
+      ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
+  };
+
+  html+='<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Клиникалық олқылықтар</div>';
+  html+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Бұл адамдар тізімде тұр — КПН төленеді, бірақ бірде-бір қызмет алмаған. Мәселе ақшада емес: <strong>аурулары анықталмай жатыр</strong>.</div>';
+
+  if(kids>0){
+    const topU=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].kids-a[1].kids).slice(0,3);
+    html+=cs('👶','0–4 жастағы балалар байланыссыз','red',
+      `<strong style="color:#dc2626;font-size:15px">${ayFmt(kids)}</strong> бала (${cmpPct(kids,T)}) · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.kids+')').join(', ')}`,
+      `Бұл ${ayFmt(kids)} бала бес жасқа толмаған, бірақ емханада бірде-бір рет болмаған. Осы жаста профилактикалық қарау, екпе күнтізбесі, өсу-даму мониторингі жүреді. Байланыс жоқ деген — <strong>екпесі кешігуі, дамудағы ауытқу байқалмай қалуы</strong> мүмкін деген сөз.`,
+      'Ең жоғары клиникалық басымдық. Бұл балаларды учаске мейіргері арқылы белсенді іздеу керек.');
+  }
+  if(eld>0){
+    html+=cs('👵','65+ жастағылар байланыссыз','yellow',
+      `<strong>${ayFmt(eld)}</strong> адам (${cmpPct(eld,T)})`,
+      `Бұл ${ayFmt(eld)} егде адам емханаға бір рет те келмеген. Бұл жаста гипертония, диабет, жүрек-тамыр аурулары жиі, әрі олар <strong>симптомсыз басталады</strong>. Қаралмаған адамда ауру анықталмайды, Д-есепке алынбайды, асқынумен ғана көрінеді.`,
+      '');
+  }
+  if(NOSVC.noPhone>0){
+    const topU=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].noPhone-a[1].noPhone).slice(0,3);
+    html+=cs('📵','Телефоны жоқ — шақыру мүмкін емес', NOSVC.noPhone/T>0.2?'red':'yellow',
+      `<strong style="color:#b45309;font-size:15px">${ayFmt(NOSVC.noPhone)}</strong> адамда (${cmpPct(NOSVC.noPhone,T)}) байланыс телефоны жоқ · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.noPhone+')').join(', ')}`,
+      `Бұл ${ayFmt(NOSVC.noPhone)} адамды шақыруға мүмкіндік жоқ — базада телефон жазылмаған. Қанша науқан жүргізсек те, оларға хабар жетпейді. Байланыс дерегін жинау — емдеу жұмысының алғышарты.`,
+      'Мұны шешу: үй аралағанда телефон нөмірін сұрап, базаға енгізу. Бұл — бір реттік науқан, бірақ бүкіл шақыру жүйесін жұмыс істетеді.');
+  }
+  if(unins>0){
+    html+=cs('💳','Сақтандырылмағандар','yellow',
+      `<strong>${ayFmt(unins)}</strong> адам (${cmpPct(unins,T)}) МӘМС-те сақтандырылмаған`,
+      `Бұл ${ayFmt(unins)} адам сақтандырылмаған, сондықтан «маған қызмет тегін емес» деп ойлауы мүмкін. Шындығында <strong>ПМСП деңгейіндегі негізгі көмек ТМККК аясында бәріне тегін</strong> — қарау, екпе, скрининг. Оларға осыны түсіндіру керек.`,
+      'Бұл — тек ақпараттандыру мәселесі болуы мүмкін. Хабарлама/науқан мазмұнын осыған бейімде.');
+  }
+  if(oldAtt>0){
+    html+=cs('📅','Өткен жылдары тіркелген, әлі байланыс жоқ','red',
+      `<strong>${ayFmt(oldAtt)}</strong> адам ағымдағы жылдан бұрын тіркелген`,
+      `Бұл ${ayFmt(oldAtt)} адам бір жылдан астам уақыт тізімде тұр, бірақ бірде-бір рет қаралмаған. Жаңа тіркелген адамның бірден келмеуі — қалыпты, ал жыл бойы келмеуі — <strong>жүйелі байланыс жоғалуы</strong>.`,
+      'Бұл топ ең терең олқылық — олардан бастау керек.');
+  }
+  html+='</div>';
+
+  // Учаске кестесі
+  html+=`<div class="card"><div class="card-title">📍 Учаске бойынша — мейіргер басымдығы</div>
+    <div style="overflow-x:auto"><table><tr><th>Учаске</th><th>Барлығы</th><th>0–4 жас</th><th>65+</th><th>Телефонсыз</th><th>Сақтандырылмаған</th></tr>`;
+  Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].total-a[1].total).forEach(([u,d])=>{
+    html+=`<tr><td>${u}</td><td><strong>${ayFmt(d.total)}</strong></td>
+      <td style="color:${d.kids>0?'#dc2626':'inherit'}">${ayFmt(d.kids)}</td>
+      <td>${ayFmt(d.eld)}</td><td style="color:${d.noPhone>d.total*0.2?'#b45309':'inherit'}">${ayFmt(d.noPhone)}</td>
+      <td>${ayFmt(d.unins)}</td></tr>`;
+  });
+  html+=`</table></div>
+    <div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргерге шақыру парағы (CSV)</div>
+      <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
+        Тізім <strong>басымдық бойынша</strong> сұрыпталады: 1) 0–4 жас, 2) 65+, 3) өткен жылдан бері, 4) кезекті.
+        <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта, электронды түрде таратпа.
+      </div>
+      <button class="icon-btn" onclick="nosvcExportCsv('')" style="font-size:12px">📥 Барлығы (${ayFmt(NOSVC.people.length)})</button>
+      ${Object.keys(NOSVC.uchDetail).sort().map(u=>`<button class="icon-btn" onclick="nosvcExportCsv('${u.replace(/'/g,"\\'")}')" style="font-size:12px;margin-left:6px">${u.replace(' общей практики','-уч')}</button>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--ink-2);margin-top:8px">Экранда пациент дерегі көрсетілмейді, серверге де жіберілмейді — CSV тек осы құрылғыда жасалады.</div>
+    <canvas id="nosvcUch" height="${Math.max(200, Object.keys(NOSVC.uchDetail).length*32)}" style="margin-top:12px"></canvas></div>`;
+
+  // Жас бөлінісі
+  html+=`<div class="card"><div class="card-title">👥 Жас тобы бойынша</div><canvas id="nosvcAge" height="110"></canvas></div>`;
+
+  box.innerHTML=html;
+
+  const uchs=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].total-a[1].total);
+  cmpChart('nosvc','nosvcUch',{type:'bar',data:{labels:uchs.map(([u])=>u),
+    datasets:[{label:'Барлығы',data:uchs.map(([,d])=>d.total),backgroundColor:'#64748b'},
+              {label:'0–4 жас',data:uchs.map(([,d])=>d.kids),backgroundColor:'#dc2626'},
+              {label:'Телефонсыз',data:uchs.map(([,d])=>d.noPhone),backgroundColor:'#d97706'}]},
+    options:{indexAxis:'y',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
+  cmpChart('nosvc','nosvcAge',{type:'bar',data:{labels:NOSVC_AGES,
+    datasets:[{label:'Қызмет алмағандар',data:NOSVC_AGES.map(a=>NOSVC.byAge[a]||0),
+      backgroundColor:NOSVC_AGES.map(a=>a==='0-4'?'#dc2626':a==='65+'?'#d97706':'#2563eb')}]},
+    options:{plugins:{legend:{display:false}}}});
 }
 
 function scrRender(){
@@ -5674,6 +5913,7 @@ document.addEventListener('DOMContentLoaded', function(){
   bind('profFiles', profHandle);
   bind('scrFiles', scrHandle);
   bind('workFiles', workHandle);
+  bind('nosvcFiles', nosvcHandle);
   if (typeof conInit==='function'){ conInit(); conRender(); }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
   ['pro','sch','act','psy','ref'].forEach(function(sec){ var fn=window[sec+'Render']; if(fn) try{fn();}catch(e){} });
