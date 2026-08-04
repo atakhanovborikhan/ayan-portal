@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.0</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.1</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4890,6 +4890,74 @@ function profRender(){
     <div class="kpi"><div class="kpi-label">ЖФВ (әйелдер)</div><div class="kpi-value">${ayFmt(totalJfv)}</div><div class="kpi-extra">${cmpPct(totalJfv,totalPat)}</div></div>
     <div class="kpi ${totalPat&&totalDyn/totalPat<0.3?'warn':''}"><div class="kpi-label">Повод «динам.бақылау»</div><div class="kpi-value">${ayFmt(totalDyn)}</div><div class="kpi-extra">${cmpPct(totalDyn,totalPat)} кодталған</div></div>
   </div>`;
+
+  // ── 🩺 КЛИНИКАЛЫҚ ОЛҚЫЛЫҚТАР ──
+  const _cs=(icon,title,tone,evidence,sentence,note)=>{
+    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
+    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
+      <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге/мейіргерге:</strong> «${sentence}»</div>
+      ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
+  };
+  let _clin='';
+
+  // 1. Учаскеде 65+ мүлдем жоқ (барлық айда) — ең күшті сигнал
+  const _zero65 = L.uchastki.filter(u=>u.total>=10 && u.age65===0);
+  if(_zero65.length){
+    const allMonthsZero = _zero65.filter(u=>keys.every(k=>{
+      const uu=(PROF.months[k].uchastki||[]).find(x=>x.name===u.name);
+      return !uu || uu.age65===0;
+    }));
+    const tgt = allMonthsZero.length?allMonthsZero:_zero65;
+    const others = L.uchastki.filter(u=>u.total>0 && u.age65>0);
+    const rng = others.length ? Math.round(Math.min(...others.map(u=>u.age65/u.total*100)))+'–'+Math.round(Math.max(...others.map(u=>u.age65/u.total*100)))+'%' : '—';
+    _clin += _cs('🚨','Учаскеде 65+ жастағы науқас Д-есепте жоқ','red',
+      `${tgt.map(u=>`<strong>${u.name}</strong> — Д-есепте ${ayFmt(u.total)} науқас, оның 65+ жастағысы <strong style="color:#dc2626">0</strong>`).join('; ')} · басқа учаскелерде 65+ үлесі ${rng}${allMonthsZero.length?' · <strong>барлық '+keys.length+' айда нөл</strong>':''}`,
+      `Бұл учаскеде Д-есепте тұрған ${ayFmt(tgt[0].total)} науқастың бірде-біреуі 65 жастан асқан емес. Егде адамда созылмалы ауру болмауы мүмкін емес: гипертония, диабет, жүрек-тамыр аурулары дәл осы жаста жиналады. Демек не егде науқастар Д-есепке алынбай жүр, не тіркеу дұрыс жүргізілмеген — екеуі де тексеруді талап етеді.`,
+      'Статистикалық тұрғыдан нөл — кездейсоқтық емес. Осы учаскенің 65+ халқын алып, кімде созылмалы ауру бар екенін қарау керек.');
+  }
+
+  // 2. Учаске арасындағы 65+ үлесінің айырмашылығы
+  const _withEld = L.uchastki.filter(u=>u.total>=10 && u.age65>0).map(u=>({n:u.name,p:u.age65/u.total*100}));
+  if(_withEld.length>=3){
+    _withEld.sort((a,b)=>b.p-a.p);
+    const hi=_withEld[0], lo=_withEld[_withEld.length-1];
+    if(hi.p/lo.p >= 1.8){
+      _clin += _cs('⚖️','Учаскелер арасында 65+ тіркеу тәжірибесі әртүрлі','yellow',
+        `Ең жоғары: <strong>${hi.n}</strong> — ${hi.p.toFixed(0)}% · ең төмен: <strong>${lo.n}</strong> — ${lo.p.toFixed(0)}% · айырма <strong>${(hi.p/lo.p).toFixed(1)} есе</strong>`,
+        `Бір емхананың учаскелерінде егде науқастарды Д-есепке алу үлесі ${(hi.p/lo.p).toFixed(1)} есе ерекшеленеді. Халықтың жас құрамы учаскелерде мұндай айырмашылық бермейді — демек айырма <strong>дәрігердің тіркеу тәжірибесінде</strong>. Төмен учаскеде созылмалы аурулар анықталмай қалуы мүмкін.`,
+        'Тексеру жолы: ең жоғары және ең төмен учаскенің 65+ халық санын салыстыр. Егер халқы ұқсас болса — мәселе тіркеуде.');
+    }
+  }
+
+  // 3. Повод-кодтау (ДҰРЫС ШЕҢБЕРДЕ: құжаттау мәселесі, клиникалық тастау емес)
+  const _lowCode = L.uchastki.filter(u=>u.total>=10 && (u.dynObs/u.total)<0.1);
+  if(_lowCode.length){
+    const dynPct = totalPat? (totalDyn/totalPat*100) : 0;
+    _clin += _cs('🏷️','«Динамикалық бақылау» поводы қойылмайды','yellow',
+      `Мекеме бойынша: <strong>${ayFmt(totalDyn)}</strong> / ${ayFmt(totalPat)} (${dynPct.toFixed(0)}%) · 10%-дан төмен учаскелер: ${_lowCode.map(u=>u.name.replace(' общей практики','-уч')).join(', ')}`,
+      `Д-есептегі науқас қабылдауға келгенде, оның себебі «динамикалық бақылау» деп кодталуы керек. Қазір бұл ${dynPct.toFixed(0)}% жағдайда ғана жасалады. Науқас <strong>қаралып жатыр</strong> — бірақ жүйе оны диспансерлік бақылау деп танымайды: сапа көрсеткішінде де, аудитте де ол «болмаған» болып саналады.`,
+      '⚠️ Бұл — клиникалық тастау емес, <strong>құжаттау</strong> мәселесі. Шара орындалуы бөлек есепте 76–96% (қалыпты). Түзету қабылдау кезінде повод таңдауды дұрыстаудан басталады.');
+  }
+
+  // 4. ЖФВ мониторингі
+  if(totalJfv>0){
+    const jfvObs = L.uchastki.reduce((a,u)=>a+(u.jfvObs||0),0);
+    if(jfvObs/totalJfv < 0.15){
+      _clin += _cs('🤰','ЖФВ (бала туу жасындағы әйелдер) бақылауы белгіленбейді','yellow',
+        `Д-есепте ЖФВ: <strong>${ayFmt(totalJfv)}</strong> · «динам.бақылау» поводымен: <strong>${ayFmt(jfvObs)}</strong> (${cmpPct(jfvObs,totalJfv)})`,
+        `Созылмалы ауруы бар ${ayFmt(totalJfv)} әйел бала туу жасында. Бұл топ ерекше: жүктілік кезінде бақыланбаған созылмалы ауру (гипертония, диабет, қалқанша) ана мен балаға тікелей қауіп төндіреді. Олардың бақылауы жүйеде белгіленбей жатыр.`,
+        'Жүктілікке дейінгі дайындық (прегравидарлық) осы топпен жүргізілуі керек.');
+    }
+  }
+
+  if(_clin){
+    html += `<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Клиникалық олқылықтар</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Д-есеп — созылмалы науқасты <strong>тұрақты бақылау</strong> жүйесі. Төменде сол жүйедегі нақты олқылықтар.</div>
+      ${_clin}</div>`;
+  }
 
   // Тренд график
   html += `<div class="card"><div class="card-title">📈 Д-есеп динамикасы (айма-ай)</div><canvas id="profTrend" height="110"></canvas></div>`;
