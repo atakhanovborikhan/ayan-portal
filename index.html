@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.4</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.5</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1290,7 +1290,7 @@ function initApp() {
   const m26Periods = ['2026-01','2026-02','2026-03','2026-04'];
   const m26Sum = m26Periods.map(p => DATA.monthly_pay[p].sum_ok + DATA.monthly_pay[p].sum_fixable);
 
-  new Chart(document.getElementById('chartMain'), {
+  if (document.getElementById('chartMain')) new Chart(document.getElementById('chartMain'), {
     type:'bar',
     data:{
       labels: m26Periods.map(periodLabel),
@@ -1309,7 +1309,7 @@ function initApp() {
   // === 2025 vs 2026 ===
   const m25Periods = ['2025-01','2025-02','2025-03','2025-04'];
   const m25Sum = m25Periods.map(p => DATA.monthly_pay[p].sum_ok);
-  new Chart(document.getElementById('chartCompare'), {
+  if (document.getElementById('chartCompare')) new Chart(document.getElementById('chartCompare'), {
     type:'line',
     data:{
       labels:['Қаңтар','Ақпан','Наурыз','Сәуір'],
@@ -1455,7 +1455,7 @@ function initApp() {
   const uchSum = uchKeys.map(k => DATA.uch[k].sum/1e6);
   const uchKpn = uchKeys.map(k => DATA.uch[k].kpn_4mo/1e6);
 
-  new Chart(document.getElementById('chartUchAll'), {
+  if (document.getElementById('chartUchAll')) new Chart(document.getElementById('chartUchAll'), {
     type:'bar',
     data:{
       labels: uchKeys.map(k=>k+'-уч.'),
@@ -1641,6 +1641,7 @@ function getUchAdvice(k, u) {
 // === АПТАЛЫҚ МОНИТОРИНГ ===
 function renderWeeklyMonitor() {
   const grid = document.getElementById('monitorGrid');
+  if (!grid) return;
   const uchKeys = ['1','2','3','4','5','6','7'];
 
   // Барлық учаскелер бойынша барлық апталардың тізімі
