@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.5</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.7</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3546,17 +3546,41 @@ function aggSchet(doc){
 function aggAkt(doc){
   return { period: cmpMonKey(doc.period), to_pay: doc.totalToPay, avans: doc.totalAvans };
 }
+
+/* Төлем жүйесі выгрузкасының ЕКІ нұсқасын да қолдау:
+   — «старая версия»: «Исполнитель» + «Сумма» бағандары бар
+   — «за месяц»: «ФИО Исполнителя» бар, «Сумма» ЖОҚ (Цена × Кол-во есептеледі) */
+function psyExecCol(header){
+  let i = cmpColExact(header,'исполнитель','мо');          // «Исполнитель» (МО емес)
+  if (i>=0) return i;
+  const H = header.map(h=>String(h||'').toLowerCase());
+  i = H.findIndex(h=>h.indexOf('фио исполнител')>=0);       // «ФИО Исполнителя»
+  return i;
+}
+function psySumCols(header){
+  const sum = cmpCol(header,'Сумма');
+  if (sum>=0) return {sum, price:-1, qty:-1};
+  return {sum:-1, price:cmpCol(header,'Цена'), qty:cmpCol(header,'Количество услуг','кол-во','оличеств')};
+}
+function psyRowSum(r, sc){
+  if (sc.sum>=0) return ayNum(r[sc.sum])||0;
+  const p = sc.price>=0 ? (ayNum(r[sc.price])||0) : 0;
+  const q = sc.qty>=0 ? (ayNum(r[sc.qty])||0) : 1;
+  return p * (q||1);
+}
+
 // PSY/REF агрегаты — олардың render-агрегатынан (тек сандар, ФИО жоқ)
 function aggPsy(monthData, key){
   const {data, header} = monthData;
+  const _sc = psySumCols(header);
   const ci = {
-    exec: cmpColExact(header,'исполнитель','мо'), svc: cmpCol(header,'Наименование услуги','наименование'),
-    status: cmpCol(header,'Статус'), err: cmpCol(header,'Ошибка'), sum: cmpCol(header,'Сумма')
+    exec: psyExecCol(header), svc: cmpCol(header,'Наименование услуги','наименование'),
+    status: cmpCol(header,'Статус'), err: cmpCol(header,'Ошибка')
   };
   let sum=0, errN=0, errSum=0;
   const exec={}, svc={}, vacc={}, mantu={}, errTypes={};
   for (const r of data){
-    const s=ayNum(r[ci.sum])||0; sum+=s;
+    const s=psyRowSum(r,_sc); sum+=s;
     const ex=ayClean(r[ci.exec]), sv=ayClean(r[ci.svc]);
     if (ex){ exec[ex]=(exec[ex]||0)+1; }
     if (sv){ svc[sv]=(svc[sv]||0)+1; }
@@ -3971,6 +3995,60 @@ function storeFlash(sec, msg, isErr){
 }
 
 /* ---- Сервер статус-панелі (әр бөлім басына) ---- */
+
+/* ---- Серверде сақталған кезеңдерді басқару (қарау + өшіру) ---- */
+function storeManage(sec){
+  const cfg = STORE_SECTIONS[sec];
+  if(!cfg){ alert('Бөлім табылмады'); return; }
+  if(!storeConfigured()){ alert('Алдымен серверге қосылыңыз'); return; }
+  const rows = (SERVER_DATA && SERVER_DATA[cfg.server]) || [];
+  if(!rows.length){
+    alert('«'+cfg.label+'» бөлімінде серверде сақталған кезең жоқ.\n\nЕгер жаңа ғана жүктеген болсаңыз — алдымен «🔄 Жаңарту» басыңыз.');
+    return;
+  }
+  const periods = rows.map(r=>_normPeriod(r.period)||String(r.period||'')).filter(Boolean).sort();
+  let html = '<div style="max-height:340px;overflow:auto">';
+  html += '<table style="font-size:12.5px;width:100%"><tr><th>Кезең</th><th>Жүктеген</th><th></th></tr>';
+  rows.slice().sort((a,b)=>String(a.period).localeCompare(String(b.period))).forEach(r=>{
+    const p=_normPeriod(r.period)||String(r.period||'');
+    const by=r.uploaded_by||r.uploaded_at||'';
+    html += `<tr><td><strong>${p}</strong></td><td style="color:var(--ink-2);font-size:11.5px">${String(by).slice(0,24)}</td>
+      <td><button class="icon-btn" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#f3b4b4"
+        onclick="storeDeletePeriod('${sec}','${p}')">✖ өшіру</button></td></tr>`;
+  });
+  html += '</table></div>';
+  const box = cmpEl(sec+'Report') || document.body;
+  let modal = document.getElementById('storeMgrModal');
+  if(modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id='storeMgrModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `<div style="background:var(--bg-card);border-radius:12px;padding:18px 20px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px">🗂 «${cfg.label}» — серверде сақталған кезеңдер</div>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Барлығы <strong>${rows.length}</strong> кезең. Өшіру серверден біржола жояды.<br>
+      <span style="color:#b45309">Ескерту: сол кезеңді қайта жүктесеңіз, ол өзі алмастырылады — өшірудің қажеті жоқ.</span></div>
+    ${html}
+    <div style="text-align:right;margin-top:12px">
+      <button class="icon-btn" onclick="document.getElementById('storeMgrModal').remove()">Жабу</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+}
+async function storeDeletePeriod(sec, period){
+  const cfg = STORE_SECTIONS[sec]; if(!cfg) return;
+  if(!confirm('«'+cfg.label+'» бөлімінен '+period+' кезеңін серверден өшіру?\n\nБұл әрекетті қайтару мүмкін емес.')) return;
+  if(!confirm('Растаңыз: '+period+' біржола өшіріледі.')) return;
+  try{
+    const j = await storeDelete(cfg.server, period);
+    if(j && j.ok===false) throw new Error(j.error||'сервер қатесі');
+    const m=document.getElementById('storeMgrModal'); if(m) m.remove();
+    await storeRefresh(sec);
+    storeFlash(sec, '🗑 '+period+' серверден өшірілді');
+  }catch(e){
+    alert('Өшірілмеді: '+e.message);
+  }
+}
+
 function storePanel(sec){
   const cfg = STORE_SECTIONS[sec];
   const on = storeConfigured();
@@ -3989,6 +4067,7 @@ function storePanel(sec){
         <span id="${sec}StoreFlash"></span>
         <button class="icon-btn" onclick="storeOpenConfig()" style="font-size:12px">${on?'⚙️ Баптау':'🔌 Серверге қосылу'}</button>
         ${on?`<button class="icon-btn" onclick="storeRefresh('${sec}')" style="font-size:12px">🔄 Жаңарту</button>`:''}
+        ${on?`<button class="icon-btn" onclick="storeManage('${sec}')" style="font-size:12px">🗂 Кезеңдер</button>`:''}
       </div>
     </div>
   </div>`;
@@ -5662,15 +5741,16 @@ function psyRender(){
       continue;
     }
     const {data, header} = Mn;
+    const _sc = psySumCols(header);
     const ci = {
-      exec: cmpColExact(header,'исполнитель','мо'), svc: cmpCol(header,'Наименование услуги','наименование'),
+      exec: psyExecCol(header), svc: cmpCol(header,'Наименование услуги','наименование'),
       povod: cmpCol(header,'Повод обращения','повод'), status: cmpCol(header,'Статус'),
-      err: cmpCol(header,'Ошибка'), sum: cmpCol(header,'Сумма'), pay: cmpCol(header,'Тип оплаты'),
+      err: cmpCol(header,'Ошибка'), pay: cmpCol(header,'Тип оплаты'),
     };
     let mSum=0, mErr=0;
     const execM={}, svcM={};
     for (const r of data){
-      const s = ayNum(r[ci.sum])||0; mSum+=s;
+      const s = psyRowSum(r,_sc); mSum+=s;
       const ex = ayClean(r[ci.exec]), sv = ayClean(r[ci.svc]);
       if (ex){ execM[ex]=execM[ex]||{n:0,sum:0}; execM[ex].n++; execM[ex].sum+=s; allExec[ex]=allExec[ex]||{n:0,sum:0,svc:{}}; allExec[ex].n++; allExec[ex].sum+=s; if(sv){allExec[ex].svc[sv]=(allExec[ex].svc[sv]||0)+1;} }
       if (sv){ svcM[sv]=svcM[sv]||{n:0,sum:0}; svcM[sv].n++; svcM[sv].sum+=s; allSvc[sv]=allSvc[sv]||{n:0,sum:0}; allSvc[sv].n++; allSvc[sv].sum+=s; }
