@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.3</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4906,7 +4906,7 @@ async function workHandle(files){
         const byDoctor={}, bySpec={}; let total=0;
         rows.slice(12).forEach(r=>{
           const doc=String(r[4]||'').trim();
-          if(!doc || /итого|^б$/i.test(doc)) return;
+          if(!doc || /итого|^б$|фио врача/i.test(doc)) return;   // тақырып жолын өткіземіз
           const spec=String(r[6]||'').trim();
           const cnt=(+String(r[8]).replace(/\s/g,''))||0;
           byDoctor[doc]=(byDoctor[doc]||0)+cnt;
@@ -4970,6 +4970,48 @@ function workRender(){
         <div style="flex:1;min-width:280px"><div style="font-weight:600;margin-bottom:6px">Дәрігер бойынша (топ)</div>${cmpTopTable(toN(A.byDoctor),{label:'Дәрігер',limit:10,showSum:false})}</div>
       </div>
       <div style="font-size:12px;color:var(--ink-2);margin-top:8px">Дәрігер жүктемесі — қабылдау саны. Ескер: бұл «жазба бойынша» қабылдау, жалпы жүктеме емес. Әділ бөлу үшін ставка/мамандықты да ескер.</div></div>`;
+
+    // ── Айлық салыстыру (2+ ай болса) ──
+    if(aKeys.length>=2){
+      const pk=aKeys[aKeys.length-2], ck=aKeys[aKeys.length-1];
+      const P=WORK.appts[pk], C=WORK.appts[ck];
+      const pDocs=Object.keys(P.byDoctor).filter(d=>P.byDoctor[d]>0);
+      const cDocs=Object.keys(C.byDoctor).filter(d=>C.byDoctor[d]>0);
+      const gone=pDocs.filter(d=>!C.byDoctor[d]).map(d=>({n:d,v:P.byDoctor[d]})).sort((a,b)=>b.v-a.v);
+      const pAvg=pDocs.length?Math.round(P.total/pDocs.length):0;
+      const cAvg=cDocs.length?Math.round(C.total/cDocs.length):0;
+      const top=Object.entries(C.byDoctor).sort((a,b)=>b[1]-a[1]);
+      const top1=top[0]?top[0][1]/C.total*100:0;
+      const top3=top.slice(0,3).reduce((a,x)=>a+x[1],0)/C.total*100;
+      // Мамандық өзгерісі
+      const allSpec=[...new Set([...Object.keys(P.bySpec),...Object.keys(C.bySpec)])];
+      const spDelta=allSpec.map(sp=>({sp, p:P.bySpec[sp]||0, c:C.bySpec[sp]||0}))
+        .filter(x=>x.p>=15||x.c>=15)
+        .map(x=>({...x, d:x.c-x.p, pct:x.p?((x.c-x.p)/x.p*100):100}));
+      const drops=spDelta.filter(x=>x.pct<=-40).sort((a,b)=>a.pct-b.pct).slice(0,3);
+
+      html+=`<div class="card" style="border-color:#c7d2fe"><div class="card-title">📊 Айлық салыстыру: ${cmpMonLabel(pk)} → ${cmpMonLabel(ck)}</div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kpi-label">Қабылдау</div><div class="kpi-value">${ayFmt(C.total)}</div><div class="kpi-extra">${C.total>=P.total?'+':''}${ayFmt(C.total-P.total)} (${P.total?(((C.total-P.total)/P.total)*100).toFixed(0):0}%)</div></div>
+          <div class="kpi ${cDocs.length<pDocs.length?'warn':''}"><div class="kpi-label">Дәрігер саны</div><div class="kpi-value">${cDocs.length}</div><div class="kpi-extra">${pDocs.length} → ${cDocs.length}${cDocs.length<pDocs.length?' ('+(pDocs.length-cDocs.length)+' кем)':''}</div></div>
+          <div class="kpi ${cAvg>pAvg*1.15?'warn':''}"><div class="kpi-label">Орташа жүктеме</div><div class="kpi-value">${ayFmt(cAvg)}</div><div class="kpi-extra">${pAvg} → ${cAvg} қабылдау/дәрігер</div></div>
+          <div class="kpi ${top1>20?'warn':''}"><div class="kpi-label">Ең жүктелген дәрігер</div><div class="kpi-value">${top1.toFixed(0)}%</div><div class="kpi-extra">топ-3 = ${top3.toFixed(0)}% барлық қабылдаудан</div></div>
+        </div>`;
+
+      if(gone.length){
+        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:10px;background:#fffbeb;border:1px solid #f2dca0">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">🏖 ${cmpMonLabel(ck)} айында қабылдау жүргізбегендер (${gone.length})</div>
+          <div style="font-size:12px">${gone.slice(0,6).map(g=>`${g.n} <span style="color:var(--ink-2)">(өткен айда ${ayFmt(g.v)})</span>`).join(' · ')}</div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:5px">Демалыс/ауру болуы мүмкін. Жүктеме қалғандарға түседі: орташа ${pAvg} → ${cAvg}. Егер жоспарланбаған болса — қабылдау кестесін қайта қарау керек.</div></div>`;
+      }
+      if(drops.length){
+        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:9px;background:#fef2f2;border:1px solid #f3b4b4">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">📉 Мамандық бойынша күрт құлдырау</div>
+          <div style="font-size:12px">${drops.map(d=>`<strong>${d.sp}</strong>: ${ayFmt(d.p)} → ${ayFmt(d.c)} (${d.pct.toFixed(0)}%)`).join(' · ')}</div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:5px">⚠️ Ішкі қуат түскенде пациент сыртқа жіберіледі — «Сыртқы бағыттар» бөлімінде сол мамандық бойынша жолдама өскен-өспегенін тексер. Ішкі қызмет тегін, сыртқы — клиника есебінен.</div></div>`;
+      }
+      html+='</div>';
+    }
   }
 
   box.innerHTML=html;
