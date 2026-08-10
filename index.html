@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.7</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v13.9</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -622,6 +622,8 @@
     <button class="tab" data-tab="scr">🔬 Скрининг</button>
     <button class="tab" data-tab="work">📊 Жүктеме</button>
     <button class="tab" data-tab="nosvc">🚪 Қызмет алмағандар</button>
+    <button class="tab" data-tab="att">📋 Тіркелу</button>
+    <button class="tab" data-tab="pop">👥 Халық профилі</button>
     <button class="tab" data-tab="doctors">👨‍⚕️ Дәрігерлер</button>
     <button class="tab" data-tab="errors">⚠️ Қателер</button>
     <button class="tab" data-tab="rec">💡 Кеңестер</button>
@@ -1170,6 +1172,34 @@
     </div>
     <div id="nosvcStoreFlash"></div>
     <div id="nosvcReport"></div>
+  </section>
+
+  <section class="section" id="att">
+    <div class="section-head"><h1 class="section-title">Тіркелу және қағаз өтініш аудиті</h1>
+      <div class="section-sub">«Список прикрепленных пациентов» және «...по бумажным заявлениям» файлдарын жүкте (2024 жылдан бері, бірнешеуін бірге). Қызмет тарихымен салыстыру «💳 Төлем жүйесі» бөліміне жүктелген деректен алынады.</div></div>
+    <div class="card">
+      <div class="card-title">📂 Тіркелу файлдарын жүктеу</div>
+      <input type="file" id="attFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="attClear()">🗑 Тазалау</button>
+      <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px">
+        Файл түрі автоматты анықталады: тақырыбында «бумажным заявлениям» болса — қағаз өтініш деп белгіленеді.
+      </div>
+    </div>
+    <div id="attReport"></div>
+  </section>
+
+  <section class="section" id="pop">
+    <div class="section-head"><h1 class="section-title">Халық профилі — жіктеу</h1>
+      <div class="section-sub">«Список прикрепленного населения по медицинской организации» файлын жүкте. Жынысы, жасы, санаты, байланыс дерегі, сақтандыруы бойынша жіктейді. Келу жиілігі мен диагноз — «💳 Төлем жүйесі» бөліміндегі қызмет тарихынан есептеледі.</div></div>
+    <div class="card">
+      <div class="card-title">📂 Тіркеулі халық тізімін жүктеу</div>
+      <input type="file" id="popFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
+      <button class="icon-btn" style="margin-left:8px" onclick="popClear()">🗑 Тазалау</button>
+      <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px">
+        Диагноз бөлінісі үшін «Төлем жүйесіне» <strong>«за месяц»</strong> нұсқасын жүктеңіз — онда «Код МКБ-10» бағаны бар.
+      </div>
+    </div>
+    <div id="popReport"></div>
   </section>
 
   <section class="section" id="psy">
@@ -4739,6 +4769,470 @@ function nosvcExportCsv(uchFilter){
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
+
+/* ============================================================
+   📋 ТІРКЕЛУ — 2024 жылдан бергі тіркелгендер + қағаз өтініш аудиті
+   Дереккөз: «Список прикрепленных пациентов» / «...по бумажным заявлениям».
+   Қызмет тарихымен салыстыру «Төлем жүйесі» бөліміне жүктелген деректен алынады.
+   Пациент дерегі (ЖСН/аты-жөні) экранға да, серверге де ШЫҚПАЙДЫ — тек агрегат.
+   ============================================================ */
+const ATT = { people:new Map(), files:[], log:[], paperFrom:'2025-12-19', paperTo:'2026-02-28' };
+
+function attDate(s){ const m=String(s||'').match(/(\d{2})\.(\d{2})\.(\d{4})/); return m?`${m[3]}-${m[2]}-${m[1]}`:''; }
+function attReconIin(masked, dob){
+  const vis=String(masked||'').replace(/\D/g,''); const d=attDate(dob);
+  if(!d || vis.length<6) return null;
+  return (d.slice(2,4)+d.slice(5,7)+d.slice(8,10)+vis).slice(0,12);
+}
+function attIdx(H, ...keys){ const L=H.map(h=>String(h||'').toLowerCase());
+  for(const k of keys){ const i=L.findIndex(h=>h.includes(k)); if(i>=0) return i; } return -1; }
+
+async function attHandle(files){
+  for(const f of files){
+    try{
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+      const title=String((rows[0]||[]).find(x=>String(x).trim())||'');
+      const isPaper=/бумажн/i.test(title);
+      let hr=-1;
+      for(let i=0;i<8;i++){ const L=(rows[i]||[]).map(x=>String(x).toLowerCase());
+        if(L.some(x=>x.includes('иин')) && L.some(x=>x.includes('прикреплен'))){ hr=i; break; } }
+      if(hr<0){ ATT.log.push({name:f.name,ok:false,info:'Тіркелу тізімі форматы емес'}); continue; }
+      const H=rows[hr];
+      const ci={ iin:attIdx(H,'иин'), dob:attIdx(H,'рождения'), sex:attIdx(H,'пол'),
+                 uch:attIdx(H,'участк','участок'), att:attIdx(H,'дата прикрепления'),
+                 reason:attIdx(H,'причина'), prev:attIdx(H,'наименование мо'), emp:attIdx(H,'сотрудник') };
+      // Кезең тақырыптан
+      const pm=title.match(/с\s*(\d{2}\.\d{2}\.\d{4})\s*по\s*(\d{2}\.\d{2}\.\d{4})/i);
+      const per = pm ? attDate(pm[1])+'…'+attDate(pm[2]) : '—';
+      let added=0, dup=0;
+      rows.slice(hr+1).forEach(r=>{
+        const mk=String(r[ci.iin]||'').trim(); if(!mk) return;
+        const key=attReconIin(mk, ci.dob>=0?r[ci.dob]:'');
+        if(!key) return;
+        const rec={ key, uch:ayClean(r[ci.uch])||'—', att:attDate(ci.att>=0?r[ci.att]:''),
+          dob:attDate(ci.dob>=0?r[ci.dob]:''), sex:ayClean(ci.sex>=0?r[ci.sex]:''),
+          reason:ayClean(ci.reason>=0?r[ci.reason]:'')||'—',
+          prev:ayClean(ci.prev>=0?r[ci.prev]:'')||'—',
+          paper:isPaper, before:0, after:0, first:'', period:per };
+        const ex=ATT.people.get(key);
+        if(ex){ dup++; if(isPaper) ex.paper=true;
+          if(rec.att && (!ex.att || rec.att<ex.att)) ex.att=rec.att;
+          if(rec.reason!=='—') ex.reason=rec.reason;
+          if(rec.prev!=='—') ex.prev=rec.prev;
+        } else { ATT.people.set(key, rec); added++; }
+      });
+      ATT.files.push({name:f.name, isPaper, per, added});
+      ATT.log.push({name:f.name, ok:true, info:(isPaper?'Қағаз өтініш':'Тіркелу тізімі')+' · '+per+' · +'+ayFmt(added)+(dup?' (қайталау '+ayFmt(dup)+')':'')});
+    }catch(e){ ATT.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
+  }
+  attMatchServices();
+  attRender();
+}
+function attClear(){
+  ATT.people=new Map(); ATT.files=[]; ATT.log=[];
+  cmpClearCharts('att'); const b=cmpEl('attReport'); if(b) b.innerHTML='';
+  const el=cmpEl('attFiles'); if(el) el.value='';
+}
+
+/* Қызмет тарихымен салыстыру — «Төлем жүйесі» (PSY) бөліміне жүктелген деректен */
+function attMatchServices(){
+  ATT.people.forEach(p=>{ p.before=0; p.after=0; p.first=''; });
+  if(typeof PSY==='undefined') return 0;
+  let scanned=0;
+  Object.keys(PSY.months).forEach(k=>{
+    const M=PSY.months[k]; if(!M || !M.data || !M.header) return;
+    const iI=cmpCol(M.header,'ИИН','иин');
+    const iD=cmpCol(M.header,'Дата выполнения','дата выполнения');
+    if(iI<0) return;
+    M.data.forEach(r=>{
+      const iin=String(r[iI]||'').replace(/\D/g,''); if(iin.length!==12) return;
+      scanned++;
+      const p=ATT.people.get(iin); if(!p) return;
+      const d=iD>=0?attDate(r[iD]):'';
+      if(!d) return;
+      if(p.att && d < p.att){ p.before++; if(!p.first || d<p.first) p.first=d; }
+      else p.after++;
+    });
+  });
+  ATT.scanned=scanned;
+  return scanned;
+}
+function attInRange(p){
+  if(!p.att) return false;
+  return p.att>=ATT.paperFrom && p.att<=ATT.paperTo;
+}
+function attSetRange(which,val){
+  if(which==='from') ATT.paperFrom=val; else ATT.paperTo=val;
+  attRender();
+}
+function attExportProof(){
+  const rows=[...ATT.people.values()].filter(p=>p.paper && attInRange(p) && p.before>0)
+    .sort((a,b)=>b.before-a.before);
+  if(!rows.length){ alert('Дәлелге сай жазба жоқ (тіркелуге дейін қызмет алғандар табылмады)'); return; }
+  const head=['Учаске','ЖСН','Туған күні','Жынысы','Тіркелген күні','Тіркеу себебі','Бұрынғы МО','Дейінгі визит','Алғашқы келу','Кейінгі визит'];
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.map(esc).join(';')];
+  rows.forEach(p=>lines.push([p.uch,p.key,p.dob,p.sex,p.att,p.reason,p.prev,p.before,p.first,p.after].map(esc).join(';')));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='Qagaz_tirkeu_daleli_'+ATT.paperFrom+'_'+ATT.paperTo+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+
+/* ============================================================
+   👥 ХАЛЫҚ ПРОФИЛІ — қазір тіркеулі тұрған пациенттерді жіктеу
+   Дереккөз: «Список прикрепленного населения по МО» (ағымдағы күй).
+   Келу жиілігі — «💳 Төлем жүйесі» бөліміне жүктелген қызмет тарихынан.
+   Пациент дерегі экранға да, серверге де ШЫҚПАЙДЫ — тек агрегат.
+   ============================================================ */
+const POP = { people:new Map(), log:[], asOf:'', scanned:0, dxLoaded:false };
+const POP_AGES = ['0-4','5-17','18-39','40-64','65+'];
+const POP_FREQ = ['Мүлдем келмеген','Бір рет','Сирек (2–4)','Тұрақты (5+)'];
+
+function popDate(s){ const m=String(s||'').match(/(\d{2})\.(\d{2})\.(\d{4})/); return m?`${m[3]}-${m[2]}-${m[1]}`:''; }
+function popRecon(mk,dob){ const v=String(mk||'').replace(/\D/g,''); const d=popDate(dob);
+  if(!d||v.length<6) return null; return (d.slice(2,4)+d.slice(5,7)+d.slice(8,10)+v).slice(0,12); }
+function popIdx(H,...k){ const L=H.map(h=>String(h||'').toLowerCase());
+  for(const x of k){ const i=L.findIndex(h=>h.includes(x)); if(i>=0) return i; } return -1; }
+function popAgeGrp(dob){ if(!dob) return null;
+  const a=(Date.now()-new Date(dob))/(365.25*864e5);
+  return a<5?'0-4':a<18?'5-17':a<40?'18-39':a<65?'40-64':'65+'; }
+
+async function popHandle(files){
+  for(const f of files){
+    try{
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+      const title=String((rows[0]||[]).find(x=>String(x).trim())||'');
+      const am=title.match(/на\s+(\d{2}\.\d{2}\.\d{4})/); if(am) POP.asOf=am[1];
+      let hr=-1;
+      for(let i=0;i<8;i++){ const L=(rows[i]||[]).map(x=>String(x).toLowerCase());
+        if(L.some(x=>x.includes('иин')) && L.some(x=>x.includes('пол'))){ hr=i; break; } }
+      if(hr<0){ POP.log.push({name:f.name,ok:false,info:'«Прикрепленное население» форматы емес'}); continue; }
+      const H=rows[hr];
+      const ci={ iin:popIdx(H,'иин'), dob:popIdx(H,'дата рождения'), sex:popIdx(H,'пол'),
+        uch:popIdx(H,'участк'), cat:popIdx(H,'категория'), soc:popIdx(H,'социальн'),
+        tel:popIdx(H,'контактные'), ins:popIdx(H,'страхован'), home:popIdx(H,'на дому'),
+        att:popIdx(H,'дата прикрепления') };
+      let added=0;
+      rows.slice(hr+1).forEach(r=>{
+        const mk=String(r[ci.iin]||'').trim(); if(!mk || !/\*/.test(mk)) return;
+        const key=popRecon(mk, ci.dob>=0?r[ci.dob]:''); if(!key) return;
+        if(POP.people.has(key)) return;
+        const tel=ci.tel>=0?String(r[ci.tel]||'').trim():'';
+        POP.people.set(key,{
+          uch: ayClean(ci.uch>=0?r[ci.uch]:'')||'—',
+          sex: (String(ci.sex>=0?r[ci.sex]:'').trim()||'—'),
+          dob: popDate(ci.dob>=0?r[ci.dob]:''),
+          cat: ayClean(ci.cat>=0?r[ci.cat]:'')||'—',
+          soc: ayClean(ci.soc>=0?r[ci.soc]:'')||'(көрсетілмеген)',
+          hasTel: !!tel && !/^_+$|^-+$/.test(tel),
+          ins: ayClean(ci.ins>=0?r[ci.ins]:'')||'—',
+          home: /да|иә|1/i.test(String(ci.home>=0?r[ci.home]:'')),
+          att: popDate(ci.att>=0?r[ci.att]:''),
+          visits:0, dx:new Set()
+        });
+        added++;
+      });
+      POP.log.push({name:f.name, ok:true, info:'Тіркеулі халық'+(POP.asOf?' ('+POP.asOf+')':'')+' · +'+ayFmt(added)});
+    }catch(e){ POP.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
+  }
+  popMatch();
+  popRender();
+}
+function popClear(){ POP.people=new Map(); POP.log=[]; POP.asOf=''; POP.scanned=0; POP.dxLoaded=false;
+  cmpClearCharts('pop'); const b=cmpEl('popReport'); if(b) b.innerHTML=''; const el=cmpEl('popFiles'); if(el) el.value=''; }
+
+/* Қызмет тарихымен салыстыру: визит саны + диагноз */
+function popMatch(){
+  POP.people.forEach(p=>{ p.visits=0; p.dx=new Set(); });
+  POP.scanned=0; POP.dxLoaded=false;
+  if(typeof PSY==='undefined') return;
+  Object.keys(PSY.months).forEach(k=>{
+    const M=PSY.months[k]; if(!M||!M.data||!M.header) return;
+    const iI=cmpCol(M.header,'ИИН','иин');
+    const iX=cmpCol(M.header,'Код МКБ','мкб');
+    if(iI<0) return;
+    if(iX>=0) POP.dxLoaded=true;
+    M.data.forEach(r=>{
+      const iin=String(r[iI]||'').replace(/\D/g,''); if(iin.length!==12) return;
+      POP.scanned++;
+      const p=POP.people.get(iin); if(!p) return;
+      p.visits++;
+      if(iX>=0){ const c=String(r[iX]||'').trim().toUpperCase(); if(c) p.dx.add(c[0]); }
+    });
+  });
+}
+function popFreqGrp(v){ return v===0?'Мүлдем келмеген':v===1?'Бір рет':v<5?'Сирек (2–4)':'Тұрақты (5+)'; }
+const POP_DX_NAMES={A:'Инфекция',B:'Инфекция',C:'Онкология',D:'Қан/ісік',E:'Эндокрин',F:'Психика',
+  G:'Жүйке',H:'Көз/құлақ',I:'Қан айналымы',J:'Тыныс алу',K:'Ас қорыту',L:'Тері',M:'Сүйек-бұлшықет',
+  N:'Несеп-жыныс',O:'Жүктілік',P:'Перинаталды',Q:'Туа біткен',R:'Симптом',S:'Жарақат',T:'Жарақат',Z:'Бақылау/скрининг'};
+
+function popExportCsv(filter){
+  const A=[...POP.people.entries()];
+  let rows=A;
+  if(filter==='novisit') rows=A.filter(([,p])=>p.visits===0);
+  else if(filter==='notel') rows=A.filter(([,p])=>!p.hasTel);
+  else if(filter==='regular') rows=A.filter(([,p])=>p.visits>=5);
+  if(!rows.length){ alert('Сүзгіге сай жазба жоқ'); return; }
+  const head=['Учаске','ЖСН','Туған күні','Жынысы','Жас тобы','Санат','Әлеуметтік мәртебе','Байланыс','Сақтандыру','Үйде қызмет','Тіркелген күні','Визит саны','Жиілік тобы'];
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.map(esc).join(';')];
+  rows.forEach(([iin,p])=>lines.push([p.uch,iin,p.dob,p.sex,popAgeGrp(p.dob)||'—',p.cat,p.soc,
+    p.hasTel?'бар':'ЖОҚ',p.ins,p.home?'иә':'',p.att,p.visits,popFreqGrp(p.visits)].map(esc).join(';')));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='Halyq_profili_'+(filter||'barlygy')+'_'+(POP.asOf||'').replace(/\./g,'')+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+function popRender(){
+  cmpClearCharts('pop');
+  const box=cmpEl('popReport'); if(!box) return;
+  let html=cmpStatusPanel(POP.log);
+  const A=[...POP.people.values()];
+  if(!A.length){ box.innerHTML=html; return; }
+  const T=A.length;
+  const svcOn=(typeof PSY!=='undefined')&&Object.keys(PSY.months).length>0;
+  const cnt=(f)=>A.filter(f).length;
+  const pct=(n)=>cmpPct(n,T);
+  const grp=(f)=>{ const o={}; A.forEach(p=>{ const k=f(p)||'—'; o[k]=(o[k]||0)+1; }); return o; };
+
+  const noTel=cnt(p=>!p.hasTel), noIns=cnt(p=>/незастрахован/i.test(p.ins));
+  const never=cnt(p=>p.visits===0), regular=cnt(p=>p.visits>=5);
+
+  html+=`<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Тіркеулі халық${POP.asOf?' ('+POP.asOf+')':''}</div><div class="kpi-value">${ayFmt(T)}</div><div class="kpi-extra">${Object.keys(grp(p=>p.uch)).length} учаске</div></div>
+    <div class="kpi ${noTel/T>0.05?'warn':''}"><div class="kpi-label">Байланыс дерегі жоқ</div><div class="kpi-value">${ayFmt(noTel)}</div><div class="kpi-extra">${pct(noTel)}</div></div>
+    <div class="kpi ${svcOn&&never/T>0.5?'warn':''}"><div class="kpi-label">Мүлдем келмеген</div><div class="kpi-value">${svcOn?ayFmt(never):'—'}</div><div class="kpi-extra">${svcOn?pct(never):'қызмет дерегі жоқ'}</div></div>
+    <div class="kpi"><div class="kpi-label">Тұрақты келеді (5+)</div><div class="kpi-value">${svcOn?ayFmt(regular):'—'}</div><div class="kpi-extra">${svcOn?pct(regular):''}</div></div>
+  </div>`;
+
+  if(!svcOn){
+    html+=`<div class="alert warn"><div class="alert-icon">⚠️</div><div><div class="alert-text">
+      <strong>Келу жиілігі есептелмеді.</strong> «💳 Төлем жүйесі» бөліміне қызмет выгрузкаларын жүктеңіз — сонда «мүлдем келмеген / бір рет / тұрақты» жіктеуі шығады.
+    </div></div></div>`;
+  }
+
+  const tbl=(title,obj,order)=>{
+    const keys=order||Object.keys(obj).sort((a,b)=>obj[b]-obj[a]);
+    let h=`<div class="card"><div class="card-title">${title}</div><table style="font-size:12.5px"><tr><th>Санат</th><th>Саны</th><th>Үлесі</th><th></th></tr>`;
+    keys.forEach(k=>{ const v=obj[k]||0; if(!v && !order) return;
+      const w=Math.round(v/T*100);
+      h+=`<tr><td>${k}</td><td><strong>${ayFmt(v)}</strong></td><td>${pct(v)}</td>
+        <td style="width:38%"><div style="background:var(--bg-card-2);border-radius:4px;height:9px"><div style="background:var(--accent);width:${w}%;height:9px;border-radius:4px"></div></div></td></tr>`; });
+    return h+'</table></div>';
+  };
+
+  html+=tbl('⚧ Жынысы бойынша', grp(p=>p.sex));
+  html+=tbl('👥 Жас тобы бойынша', grp(p=>popAgeGrp(p.dob)), POP_AGES);
+  html+=tbl('🏷 Санаты (ДамуМед)', grp(p=>p.cat));
+  if(svcOn) html+=tbl('🔁 Емге келу жиілігі', grp(p=>popFreqGrp(p.visits)), POP_FREQ);
+  html+=tbl('📞 Байланыс дерегі', grp(p=>p.hasTel?'Байланыс бар':'Байланыс ЖОҚ'));
+  html+=tbl('💳 Сақтандыру мәртебесі', grp(p=>p.ins));
+  const soc=grp(p=>p.soc);
+  if(Object.keys(soc).length>1) html+=tbl('🧾 Әлеуметтік мәртебе', soc);
+
+  // Диагноз
+  if(POP.dxLoaded){
+    const dx={}; A.forEach(p=>p.dx.forEach(c=>{ const n=POP_DX_NAMES[c]||('Басқа ('+c+')'); dx[n]=(dx[n]||0)+1; }));
+    if(Object.keys(dx).length) html+=tbl('🏥 Диагноз класы (МКБ-10, қызмет дерегінен)', dx);
+  } else if(svcOn){
+    html+=`<div class="card"><div class="card-title">🏥 Диагноз класы</div>
+      <div style="font-size:12.5px;color:var(--ink-2)">Диагноз бағаны жүктелген қызмет файлдарында жоқ. «За месяц» нұсқасындағы выгрузканы жүктесеңіз (онда «Код МКБ-10» бар), диагноз бөлінісі осында шығады.</div></div>`;
+  }
+
+  // Учаске × негізгі көрсеткіштер
+  const uchs=[...new Set(A.map(p=>p.uch))].sort();
+  html+=`<div class="card"><div class="card-title">📍 Учаске бойынша қима</div><div style="overflow-x:auto">
+    <table style="font-size:12px"><tr><th>Учаске</th><th>Халық</th><th>0–4</th><th>65+</th><th>Байланыссыз</th>${svcOn?'<th>Келмеген</th><th>Тұрақты</th>':''}</tr>`;
+  uchs.forEach(u=>{
+    const s=A.filter(p=>p.uch===u);
+    const nt=s.filter(p=>!p.hasTel).length;
+    html+=`<tr><td>${u}</td><td><strong>${ayFmt(s.length)}</strong></td>
+      <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='0-4').length)}</td>
+      <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='65+').length)}</td>
+      <td style="color:${nt>s.length*0.08?'#b45309':'inherit'}">${ayFmt(nt)}</td>
+      ${svcOn?`<td style="color:${s.filter(p=>p.visits===0).length>s.length*0.5?'#dc2626':'inherit'}">${ayFmt(s.filter(p=>p.visits===0).length)}</td><td>${ayFmt(s.filter(p=>p.visits>=5).length)}</td>`:''}</tr>`;
+  });
+  html+='</table></div><canvas id="popUchChart" height="'+Math.max(200,uchs.length*32)+'" style="margin-top:12px"></canvas></div>';
+
+  // Жас × жиілік қиылысы
+  if(svcOn){
+    html+=`<div class="card"><div class="card-title">🔀 Жас × келу жиілігі (қиылысу)</div><div style="overflow-x:auto">
+      <table style="font-size:12px"><tr><th>Жас тобы</th>${POP_FREQ.map(f=>'<th>'+f+'</th>').join('')}<th>Барлығы</th></tr>`;
+    POP_AGES.forEach(ag=>{
+      const s=A.filter(p=>popAgeGrp(p.dob)===ag);
+      html+=`<tr><td><strong>${ag}</strong></td>`;
+      POP_FREQ.forEach(fq=>{ const n=s.filter(p=>popFreqGrp(p.visits)===fq).length;
+        const share=s.length?n/s.length:0;
+        html+=`<td style="background:rgba(37,99,235,${(share*0.35).toFixed(2)})">${ayFmt(n)} <span style="color:var(--ink-2);font-size:10.5px">${s.length?(share*100).toFixed(0)+'%':''}</span></td>`; });
+      html+=`<td><strong>${ayFmt(s.length)}</strong></td></tr>`;
+    });
+    html+='</table></div><div style="font-size:11px;color:var(--ink-2);margin-top:6px">Түс қоюлығы — топ ішіндегі үлес. 0–4 жаста «мүлдем келмеген» көп болса, бұл екпе/бақылау олқылығы.</div></div>';
+  }
+
+  // CSV
+  html+=`<div class="card" style="border-color:#f2dca0;background:#fffbeb">
+    <div class="card-title">📥 Тізім жүктеу (CSV)</div>
+    <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
+      <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта.
+    </div>
+    <button class="icon-btn" onclick="popExportCsv('')" style="font-size:12px">Барлығы (${ayFmt(T)})</button>
+    ${svcOn?`<button class="icon-btn" onclick="popExportCsv('novisit')" style="font-size:12px;margin-left:6px">Мүлдем келмегендер (${ayFmt(never)})</button>`:''}
+    <button class="icon-btn" onclick="popExportCsv('notel')" style="font-size:12px;margin-left:6px">Байланыссыздар (${ayFmt(noTel)})</button>
+    ${svcOn?`<button class="icon-btn" onclick="popExportCsv('regular')" style="font-size:12px;margin-left:6px">Тұрақтылар (${ayFmt(regular)})</button>`:''}
+  </div>`;
+
+  box.innerHTML=html;
+
+  const us=uchs.map(u=>({u,n:A.filter(p=>p.uch===u).length,
+    nv:A.filter(p=>p.uch===u&&p.visits===0).length}));
+  cmpChart('pop','popUchChart',{type:'bar',data:{labels:us.map(x=>x.u),
+    datasets:[{label:'Тіркеулі халық',data:us.map(x=>x.n),backgroundColor:'#2563eb'}]
+      .concat(svcOn?[{label:'Мүлдем келмеген',data:us.map(x=>x.nv),backgroundColor:'#dc2626'}]:[])},
+    options:{indexAxis:'y',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
+}
+
+function attRender(){
+  cmpClearCharts('att');
+  const box=cmpEl('attReport'); if(!box) return;
+  let html=cmpStatusPanel(ATT.log);
+  const A=[...ATT.people.values()];
+  if(!A.length){ box.innerHTML=html; return; }
+
+  const svcLoaded = (typeof PSY!=='undefined') && Object.keys(PSY.months).length>0;
+  const paper=A.filter(p=>p.paper);
+  const inRange=paper.filter(attInRange);
+  const withBefore=inRange.filter(p=>p.before>0);
+  const anyContact=inRange.filter(p=>p.before+p.after>0);
+
+  // ── 1. Жалпы тіркелу ──
+  const years={}; A.forEach(p=>{ const y=(p.att||'').slice(0,4)||'—'; years[y]=(years[y]||0)+1; });
+  html+=`<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Барлық тіркелген (бірегей)</div><div class="kpi-value">${ayFmt(A.length)}</div><div class="kpi-extra">${ATT.files.length} файл</div></div>
+    <div class="kpi"><div class="kpi-label">Қағаз өтінішпен</div><div class="kpi-value">${ayFmt(paper.length)}</div><div class="kpi-extra">${cmpPct(paper.length,A.length)}</div></div>
+    <div class="kpi"><div class="kpi-label">Қызмет дерегі</div><div class="kpi-value">${svcLoaded?ayFmt(Object.keys(PSY.months).length):'—'}</div><div class="kpi-extra">${svcLoaded?'ай жүктелген':'жүктелмеген'}</div></div>
+    <div class="kpi"><div class="kpi-label">Тіркелу жылдары</div><div class="kpi-value">${Object.keys(years).filter(y=>y!=='—').length}</div><div class="kpi-extra">${Object.keys(years).filter(y=>y!=='—').sort().join(', ')}</div></div>
+  </div>`;
+
+  if(!svcLoaded){
+    html+=`<div class="alert warn"><div class="alert-icon">⚠️</div><div><div class="alert-text">
+      <strong>Қызмет дерегі жүктелмеген.</strong> «Тіркелуге дейін ем алған» көрсеткішін есептеу үшін алдымен
+      <strong>«💳 Төлем жүйесі»</strong> бөліміне 2024–2026 жылдардың выгрузкаларын жүктеңіз, сосын осында қайта оралыңыз.
+    </div></div></div>`;
+  }
+
+  // Жыл бойынша тіркелу
+  html+=`<div class="card"><div class="card-title">📅 Тіркелу жылы бойынша</div>
+    <table style="font-size:12.5px"><tr><th>Жыл</th><th>Тіркелген</th><th>Оның қағазбен</th></tr>`;
+  Object.keys(years).filter(y=>y!=='—').sort().forEach(y=>{
+    const pn=paper.filter(p=>(p.att||'').slice(0,4)===y).length;
+    html+=`<tr><td><strong>${y}</strong></td><td>${ayFmt(years[y])}</td><td>${ayFmt(pn)} <span style="color:var(--ink-2)">${years[y]?cmpPct(pn,years[y]):''}</span></td></tr>`;
+  });
+  html+='</table></div>';
+
+  // ── 2. ҚАҒАЗ ӨТІНІШ БӨЛІМШЕСІ ──
+  html+=`<div class="card" style="border-color:#c7d2fe">
+    <div class="card-title">📄 Қағаз өтінішпен тіркеу — аудит</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div><label class="form-label" style="font-size:11px">Кезең басы</label>
+        <input type="date" class="form-input" value="${ATT.paperFrom}" onchange="attSetRange('from',this.value)" style="font-size:12px;padding:6px"></div>
+      <div><label class="form-label" style="font-size:11px">Кезең соңы</label>
+        <input type="date" class="form-input" value="${ATT.paperTo}" onchange="attSetRange('to',this.value)" style="font-size:12px;padding:6px"></div>
+      <div style="font-size:12px;color:var(--ink-2);padding-bottom:6px">Кезеңдегі қағаз тіркеу: <strong>${ayFmt(inRange.length)}</strong></div>
+    </div>`;
+
+  if(inRange.length){
+    const pct=v=>inRange.length?((v/inRange.length*100).toFixed(1)+'%'):'—';
+    html+=`<div class="kpi-grid" style="margin-bottom:10px">
+      <div class="kpi ${withBefore.length?'':'warn'}"><div class="kpi-label">Тіркелуге ДЕЙІН ем алған</div>
+        <div class="kpi-value" style="color:#16a34a">${ayFmt(withBefore.length)}</div><div class="kpi-extra">${pct(withBefore.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">Кез келген байланыс</div>
+        <div class="kpi-value">${ayFmt(anyContact.length)}</div><div class="kpi-extra">${pct(anyContact.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">Байланыс жоқ</div>
+        <div class="kpi-value">${ayFmt(inRange.length-anyContact.length)}</div><div class="kpi-extra">${pct(inRange.length-anyContact.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">Орташа дейінгі визит</div>
+        <div class="kpi-value">${withBefore.length?(withBefore.reduce((a,p)=>a+p.before,0)/withBefore.length).toFixed(1):'—'}</div><div class="kpi-extra">рет</div></div>
+    </div>`;
+
+    // Алғашқы байланыс айы (кесілу тексерісі)
+    const fm={}; withBefore.forEach(p=>{ const m=(p.first||'').slice(0,7); if(m) fm[m]=(fm[m]||0)+1; });
+    const fks=Object.keys(fm).sort();
+    if(fks.length>1){
+      const edge=fm[fks[0]]||0, avg=(Object.values(fm).reduce((a,b)=>a+b,0)-edge)/(fks.length-1);
+      if(edge > avg*1.8){
+        html+=`<div class="alert warn"><div class="alert-icon">📉</div><div><div class="alert-text">
+          <strong>Дерек кесілген (left truncation).</strong> Алғашқы байланысы ${fks[0]} айында көрінгендер — <strong>${ayFmt(edge)}</strong>,
+          ал қалған айлардың орташасы ${avg.toFixed(0)}. Бұл олардың шын мәнінде <strong>одан бұрын да келгенін</strong> білдіреді.
+          Ертерек жылдың қызмет выгрузкасын қоссаңыз, «дейін ем алған» саны өседі.
+        </div></div></div>`;
+      }
+      html+=`<canvas id="attFirstChart" height="100" style="margin-top:8px"></canvas>`;
+    }
+
+    // Себеп бойынша
+    const rs={}; inRange.forEach(p=>{ rs[p.reason]=(rs[p.reason]||{n:0,b:0}); rs[p.reason].n++; if(p.before>0) rs[p.reason].b++; });
+    html+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Тіркеу себебі бойынша</div>
+      <table style="font-size:12px"><tr><th>Себеп</th><th>Саны</th><th>Дейін ем алған</th><th>%</th></tr>`;
+    Object.entries(rs).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
+      html+=`<tr><td>${k}</td><td>${ayFmt(v.n)}</td><td><strong>${ayFmt(v.b)}</strong></td><td>${cmpPct(v.b,v.n)}</td></tr>`;
+    });
+    html+='</table></div>';
+
+    // Бұрынғы МО
+    const pm={}; inRange.forEach(p=>{ pm[p.prev]=(pm[p.prev]||{n:0,b:0}); pm[p.prev].n++; if(p.before>0) pm[p.prev].b++; });
+    const pmTop=Object.entries(pm).sort((a,b)=>b[1].n-a[1].n).slice(0,8);
+    html+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Бұрын қай мекемеде тіркелген</div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Мекеме</th><th>Саны</th><th>Дейін ем алған</th><th>%</th></tr>`;
+    pmTop.forEach(([k,v])=>{
+      const ours=/аян/i.test(k);
+      html+=`<tr><td>${k.slice(0,48)}${ours?' <strong style="color:#16a34a">← өзіміз</strong>':''}</td><td>${ayFmt(v.n)}</td><td><strong>${ayFmt(v.b)}</strong></td><td>${cmpPct(v.b,v.n)}</td></tr>`;
+    });
+    html+='</table></div></div>';
+
+    // Учаске
+    const uc={}; inRange.forEach(p=>{ uc[p.uch]=(uc[p.uch]||{n:0,b:0}); uc[p.uch].n++; if(p.before>0) uc[p.uch].b++; });
+    html+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Учаске бойынша</div>
+      <table style="font-size:12px"><tr><th>Учаске</th><th>Саны</th><th>Дейін ем алған</th><th>%</th></tr>`;
+    Object.entries(uc).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
+      html+=`<tr><td>${k}</td><td>${ayFmt(v.n)}</td><td><strong>${ayFmt(v.b)}</strong></td><td>${cmpPct(v.b,v.n)}</td></tr>`;
+    });
+    html+='</table></div>';
+
+    // Дәлел CSV
+    html+=`<div style="margin-top:14px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Дәлел тізімі (CSV)</div>
+      <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
+        Тіркелуге дейін ем алған <strong>${ayFmt(withBefore.length)}</strong> пациент: визит саны, алғашқы келу күні, тіркеу себебі, бұрынғы мекеме.
+        <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ресми қолданысқа.
+      </div>
+      <button class="icon-btn" onclick="attExportProof()" style="font-size:12px">📥 Дәлел тізімін жүктеу (${ayFmt(withBefore.length)})</button>
+    </div>`;
+  } else {
+    html+='<div style="font-size:13px;color:var(--ink-2)">Таңдалған кезеңде қағаз өтінішпен тіркелген жазба жоқ.</div>';
+  }
+  html+='</div>';
+
+  box.innerHTML=html;
+
+  // Алғашқы байланыс графигі
+  const fm2={}; withBefore.forEach(p=>{ const m=(p.first||'').slice(0,7); if(m) fm2[m]=(fm2[m]||0)+1; });
+  const ks=Object.keys(fm2).sort();
+  if(ks.length>1 && document.getElementById('attFirstChart')){
+    cmpChart('att','attFirstChart',{type:'bar',data:{labels:ks.map(cmpMonLabel),
+      datasets:[{label:'Алғашқы байланыс айы',data:ks.map(k=>fm2[k]),
+        backgroundColor:ks.map((k,i)=>i===0?'#dc2626':'#2563eb')}]},
+      options:{plugins:{legend:{display:false},title:{display:true,text:'Тіркелуге дейінгі алғашқы келу айы (қызыл = дерек шекарасы)'}}}});
+  }
+}
+
 function nosvcRender(){
   cmpClearCharts('nosvc');
   const box=cmpEl('nosvcReport'); if(!box) return;
@@ -6231,6 +6725,8 @@ document.addEventListener('DOMContentLoaded', function(){
   bind('scrFiles', scrHandle);
   bind('workFiles', workHandle);
   bind('nosvcFiles', nosvcHandle);
+  bind('attFiles', attHandle);
+  bind('popFiles', popHandle);
   if (typeof conInit==='function'){ conInit(); conRender(); }
   if (typeof salHistRender==='function'){ try{ salHistRender(); }catch(e){} }
   // Жаңа бөлімдердің бастапқы рендері (сервер панелін бірден көрсету)
