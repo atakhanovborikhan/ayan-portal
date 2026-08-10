@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.5</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.6</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1200,6 +1200,7 @@
         Диагноз бөлінісі үшін «Төлем жүйесіне» <strong>«за месяц»</strong> нұсқасын жүктеңіз — онда «Код МКБ-10» бағаны бар.
       </div>
     </div>
+    <div id="popStoreFlash"></div>
     <div id="popReport"></div>
   </section>
 
@@ -3711,6 +3712,28 @@ function detectAnomalies(series, k){ // series: [{period, value}], k=шекті�
 
 
 
+
+/* ---- Халық профилі агрегаты (пациент дерегі ЖОҚ) ---- */
+function aggPop(key){
+  const A=[...POP.people.values()];
+  const g=(f)=>{ const o={}; A.forEach(p=>{ const k=f(p)||'—'; o[k]=(o[k]||0)+1; }); return o; };
+  const svcOn=(typeof PSY!=='undefined')&&Object.keys(PSY.months).length>0;
+  const uch={};
+  A.forEach(p=>{ const u=p.uch||'—'; uch[u]=uch[u]||{n:0,kids:0,eld:0,notel:0,never:0,reg:0};
+    uch[u].n++;
+    const ag=popAgeGrp(p.dob);
+    if(ag==='0-4') uch[u].kids++; if(ag==='65+') uch[u].eld++;
+    if(!p.hasTel) uch[u].notel++;
+    if(svcOn){ if(p.visits===0) uch[u].never++; if(p.visits>=5) uch[u].reg++; }
+  });
+  return { period:key, total:A.length, asof:POP.asOf||'',
+    notel:A.filter(p=>!p.hasTel).length,
+    never: svcOn?A.filter(p=>p.visits===0).length:'',
+    regular: svcOn?A.filter(p=>p.visits>=5).length:'',
+    sex_json:g(p=>p.sex), age_json:g(p=>popAgeGrp(p.dob)), cat_json:g(p=>p.cat),
+    ins_json:g(p=>p.ins), freq_json: svcOn?g(p=>popFreqGrp(p.visits)):{}, uch_json:uch };
+}
+
 /* ---- Тіркелу агрегаты (пациент дерегі ЖОҚ) ---- */
 function aggAtt(key){
   const A=[...ATT.people.values()];
@@ -3913,6 +3936,7 @@ const STORE_SECTIONS = {
   scr: { server:'clin_scr',      label:'Скрининг', kind:'xlsx' },
   nosvc:{server:'clin_nosvc',    label:'Қызмет алмағандар', kind:'xlsx' },
   att:  {server:'clin_att',      label:'Тіркелу', kind:'xlsx' },
+  pop:  {server:'clin_pop',      label:'Халық профилі', kind:'xlsx' },
 };
 
 // Бет ашылғанда сервер дерегін жадыға тарту
@@ -3924,7 +3948,7 @@ async function storeInitAll(){
   // Әр бөлімге сервер айларын құю (тірі жүктемеген айлар да көрінсін)
   storeMergeIntoSections();
   // Қайта рендер
-  ['pro','sch','act','psy','ref','prof','work','scr','nosvc','att'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
+  ['pro','sch','act','psy','ref','prof','work','scr','nosvc','att','pop'].forEach(sec=>{ const fn=window[sec+'Render']; if(fn) try{fn();}catch(e){ console.warn(sec+' render:', e.message); } });
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
   if (typeof conRender==='function') { try{ conRender(); }catch(e){} }
 }
@@ -3992,6 +4016,11 @@ function storeMergeIntoSections(){
         byUchNotDone:o.uchNotDone||{}, byUchTotal:{}, _fromServer:true};
     });
     if(Object.keys(L).length) SCRQ.period=_normPeriod(row.period)||SCRQ.period;
+  });
+  // Халық профилі (агрегат)
+  (SERVER_DATA.clin_pop||[]).forEach(row=>{
+    if (typeof POP==='undefined' || POP.people.size) return;
+    POP.srvAgg = row; POP.asOf = row.asof || POP.asOf;
   });
   // Тіркелу (агрегат — пациент тізімі серверде ЖОҚ)
   (SERVER_DATA.clin_att||[]).forEach(row=>{
@@ -5252,7 +5281,18 @@ async function popHandle(files){
       let hr=-1;
       for(let i=0;i<8;i++){ const L=(rows[i]||[]).map(x=>String(x).toLowerCase());
         if(L.some(x=>x.includes('иин')) && L.some(x=>x.includes('пол'))){ hr=i; break; } }
-      if(hr<0){ POP.log.push({name:f.name,ok:false,info:'«Прикрепленное население» форматы емес'}); continue; }
+      if(hr<0){
+        // Не табылмағанын нақты айтамыз
+        let seen='';
+        for(let i=0;i<8;i++){ const L=(rows[i]||[]).filter(x=>String(x).trim());
+          if(L.length>=4){ seen=L.slice(0,6).map(x=>String(x).slice(0,18)).join(' | '); break; } }
+        const hasIin=rows.slice(0,8).some(r=>(r||[]).some(x=>/иин/i.test(String(x))));
+        const hasSex=rows.slice(0,8).some(r=>(r||[]).some(x=>/^пол$|пол\b/i.test(String(x).trim())));
+        POP.log.push({name:f.name, ok:false, info:'Танылмады — «ИИН» бағаны:'+(hasIin?'бар':'ЖОҚ')+
+          ', «Пол» бағаны:'+(hasSex?'бар':'ЖОҚ')+(seen?' · тақырып: '+seen:'')+
+          '. Қажет: «Список прикрепленного населения по МО» выгрузкасы.'});
+        continue;
+      }
       const H=rows[hr];
       const ci={ iin:popIdx(H,'иин'), dob:popIdx(H,'дата рождения'), sex:popIdx(H,'пол'),
         uch:popIdx(H,'участк'), cat:popIdx(H,'категория'), soc:popIdx(H,'социальн'),
@@ -5282,7 +5322,13 @@ async function popHandle(files){
     }catch(e){ POP.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
   popMatch();
+  if(POP.people.size){
+    const per=(POP.asOf||'').match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    const key = per ? per[3]+'-'+per[2] : (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    window._saveResultsGlobal['pop']=[await storeAutoSaveAgg('pop', key, aggPop(key))];
+  }
   popRender();
+  _flashSaveSummary('pop');
 }
 function popClear(){ POP.people=new Map(); POP.log=[]; POP.asOf=''; POP.scanned=0; POP.dxLoaded=false;
   cmpClearCharts('pop'); const b=cmpEl('popReport'); if(b) b.innerHTML=''; const el=cmpEl('popFiles'); if(el) el.value=''; }
@@ -5334,7 +5380,7 @@ function popExportCsv(filter){
 function popRender(){
   cmpClearCharts('pop');
   const box=cmpEl('popReport'); if(!box) return;
-  let html=cmpStatusPanel(POP.log);
+  let html=(typeof storePanel==='function'?storePanel('pop'):'')+cmpStatusPanel(POP.log);
   const A=[...POP.people.values()];
   if(!A.length){ box.innerHTML=html; return; }
   const T=A.length;
