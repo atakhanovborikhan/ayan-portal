@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.7</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.8</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1335,8 +1335,31 @@ function initApp() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById(btn.dataset.tab).classList.add('active');
+      const _sec = btn.dataset.tab;
+      document.getElementById(_sec).classList.add('active');
       window.scrollTo({top: 0, behavior: 'smooth'});
+      /* Қызмет тарихына тәуелді бөлімдерді ҚАЙТА ЕСЕПТЕУ.
+         Себебі: пайдаланушы алдымен осы бөлімге файл жүктеп, СОСЫН «Төлем жүйесі» мен
+         «Сыртқы бағыттар» бөлімдеріне выгрузка жүктеуі мүмкін — сонда бұл бөлім ескі
+         (бос) нәтижені көрсетіп қалады. Табқа кірген сайын қайта санаймыз. */
+      try{
+        if(_sec==='scr' && typeof SCR!=='undefined' && SCR.people && SCR.people.size){
+          if(typeof scrPullServices==='function') scrPullServices();
+          if(typeof scrRender==='function') scrRender();
+        }
+        if(_sec==='pop' && typeof POP!=='undefined' && POP.people && POP.people.size){
+          if(typeof popMatch==='function') popMatch();
+          if(typeof popRender==='function') popRender();
+        }
+        if(_sec==='att' && typeof ATT!=='undefined' && ATT.people && ATT.people.size){
+          if(typeof attMatchServices==='function') attMatchServices();
+          if(typeof attRender==='function') attRender();
+        }
+        if(_sec==='prof' && typeof DREG!=='undefined' && DREG.people && DREG.people.size){
+          if(typeof dregMatch==='function') dregMatch();
+          if(typeof profRender==='function') profRender();
+        }
+      }catch(e){}
     });
   });
 
