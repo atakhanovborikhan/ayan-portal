@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.6</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.7</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3717,21 +3717,21 @@ function detectAnomalies(series, k){ // series: [{period, value}], k=шекті�
 function aggPop(key){
   const A=[...POP.people.values()];
   const g=(f)=>{ const o={}; A.forEach(p=>{ const k=f(p)||'—'; o[k]=(o[k]||0)+1; }); return o; };
-  const svcOn=(typeof PSY!=='undefined')&&Object.keys(PSY.months).length>0;
+  const svcOn=(POP.srcMonths||0)>0;
   const uch={};
   A.forEach(p=>{ const u=p.uch||'—'; uch[u]=uch[u]||{n:0,kids:0,eld:0,notel:0,never:0,reg:0};
     uch[u].n++;
     const ag=popAgeGrp(p.dob);
     if(ag==='0-4') uch[u].kids++; if(ag==='65+') uch[u].eld++;
     if(!p.hasTel) uch[u].notel++;
-    if(svcOn){ if(p.visits===0) uch[u].never++; if(p.visits>=5) uch[u].reg++; }
+    if(svcOn){ if(popTot(p)===0) uch[u].never++; if(popTot(p)>=5) uch[u].reg++; }
   });
   return { period:key, total:A.length, asof:POP.asOf||'',
     notel:A.filter(p=>!p.hasTel).length,
-    never: svcOn?A.filter(p=>p.visits===0).length:'',
-    regular: svcOn?A.filter(p=>p.visits>=5).length:'',
+    never: svcOn?A.filter(p=>popTot(p)===0).length:'',
+    regular: svcOn?A.filter(p=>popTot(p)>=5).length:'',
     sex_json:g(p=>p.sex), age_json:g(p=>popAgeGrp(p.dob)), cat_json:g(p=>p.cat),
-    ins_json:g(p=>p.ins), freq_json: svcOn?g(p=>popFreqGrp(p.visits)):{}, uch_json:uch };
+    ins_json:g(p=>p.ins), freq_json: svcOn?g(p=>popFreqGrp(popTot(p))):{}, uch_json:uch };
 }
 
 /* ---- Тіркелу агрегаты (пациент дерегі ЖОҚ) ---- */
@@ -5335,25 +5335,30 @@ function popClear(){ POP.people=new Map(); POP.log=[]; POP.asOf=''; POP.scanned=
 
 /* Қызмет тарихымен салыстыру: визит саны + диагноз */
 function popMatch(){
-  POP.people.forEach(p=>{ p.visits=0; p.dx=new Set(); });
-  POP.scanned=0; POP.dxLoaded=false;
-  if(typeof PSY==='undefined') return;
-  Object.keys(PSY.months).forEach(k=>{
-    const M=PSY.months[k]; if(!M||!M.data||!M.header) return;
+  POP.people.forEach(p=>{ p.visits=0; p.ext=0; p.dx=new Set(); });
+  POP.scanned=0; POP.dxLoaded=false; POP.srcMonths=0; POP.aggOnly=0;
+  const apply=(M,isExt)=>{
+    if(!M) return;
+    // Серверден келген агрегатта шикі жол жоқ — оны бөлек санаймыз
+    if(!M.data || !M.header){ POP.aggOnly++; return; }
     const iI=cmpCol(M.header,'ИИН','иин');
-    const iX=cmpCol(M.header,'Код МКБ','мкб');
     if(iI<0) return;
+    const iX=cmpCol(M.header,'Код МКБ','мкб');
     if(iX>=0) POP.dxLoaded=true;
+    POP.srcMonths++;
     M.data.forEach(r=>{
       const iin=String(r[iI]||'').replace(/\D/g,''); if(iin.length!==12) return;
       POP.scanned++;
       const p=POP.people.get(iin); if(!p) return;
-      p.visits++;
+      if(isExt) p.ext++; else p.visits++;
       if(iX>=0){ const c=String(r[iX]||'').trim().toUpperCase(); if(c) p.dx.add(c[0]); }
     });
-  });
+  };
+  if(typeof PSY!=='undefined') Object.keys(PSY.months).forEach(k=>apply(PSY.months[k],false));
+  if(typeof REF!=='undefined') Object.keys(REF.months).forEach(k=>apply(REF.months[k],true));
 }
 function popFreqGrp(v){ return v===0?'Мүлдем келмеген':v===1?'Бір рет':v<5?'Сирек (2–4)':'Тұрақты (5+)'; }
+function popTot(p){ return (p.visits||0)+(p.ext||0); }
 const POP_DX_NAMES={A:'Инфекция',B:'Инфекция',C:'Онкология',D:'Қан/ісік',E:'Эндокрин',F:'Психика',
   G:'Жүйке',H:'Көз/құлақ',I:'Қан айналымы',J:'Тыныс алу',K:'Ас қорыту',L:'Тері',M:'Сүйек-бұлшықет',
   N:'Несеп-жыныс',O:'Жүктілік',P:'Перинаталды',Q:'Туа біткен',R:'Симптом',S:'Жарақат',T:'Жарақат',Z:'Бақылау/скрининг'};
@@ -5361,15 +5366,15 @@ const POP_DX_NAMES={A:'Инфекция',B:'Инфекция',C:'Онколог�
 function popExportCsv(filter){
   const A=[...POP.people.entries()];
   let rows=A;
-  if(filter==='novisit') rows=A.filter(([,p])=>p.visits===0);
+  if(filter==='novisit') rows=A.filter(([,p])=>popTot(p)===0);
   else if(filter==='notel') rows=A.filter(([,p])=>!p.hasTel);
-  else if(filter==='regular') rows=A.filter(([,p])=>p.visits>=5);
+  else if(filter==='regular') rows=A.filter(([,p])=>popTot(p)>=5);
   if(!rows.length){ alert('Сүзгіге сай жазба жоқ'); return; }
-  const head=['Учаске','ЖСН','Туған күні','Жынысы','Жас тобы','Санат','Әлеуметтік мәртебе','Байланыс','Сақтандыру','Үйде қызмет','Тіркелген күні','Визит саны','Жиілік тобы'];
+  const head=['Учаске','ЖСН','Туған күні','Жынысы','Жас тобы','Санат','Әлеуметтік мәртебе','Байланыс','Сақтандыру','Үйде қызмет','Тіркелген күні','Ішкі визит','Сыртқы жолдама','Барлығы','Жиілік тобы'];
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const lines=[head.map(esc).join(';')];
   rows.forEach(([iin,p])=>lines.push([p.uch,iin,p.dob,p.sex,popAgeGrp(p.dob)||'—',p.cat,p.soc,
-    p.hasTel?'бар':'ЖОҚ',p.ins,p.home?'иә':'',p.att,p.visits,popFreqGrp(p.visits)].map(esc).join(';')));
+    p.hasTel?'бар':'ЖОҚ',p.ins,p.home?'иә':'',p.att,p.visits,p.ext||0,popTot(p),popFreqGrp(popTot(p))].map(esc).join(';')));
   const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='Halyq_profili_'+(filter||'barlygy')+'_'+(POP.asOf||'').replace(/\./g,'')+'.csv';
@@ -5384,13 +5389,13 @@ function popRender(){
   const A=[...POP.people.values()];
   if(!A.length){ box.innerHTML=html; return; }
   const T=A.length;
-  const svcOn=(typeof PSY!=='undefined')&&Object.keys(PSY.months).length>0;
+  const svcOn = (POP.srcMonths||0) > 0;   // шикі жол бар ма (серверлік агрегат саналмайды)
   const cnt=(f)=>A.filter(f).length;
   const pct=(n)=>cmpPct(n,T);
   const grp=(f)=>{ const o={}; A.forEach(p=>{ const k=f(p)||'—'; o[k]=(o[k]||0)+1; }); return o; };
 
   const noTel=cnt(p=>!p.hasTel), noIns=cnt(p=>/незастрахован/i.test(p.ins));
-  const never=cnt(p=>p.visits===0), regular=cnt(p=>p.visits>=5);
+  const never=cnt(p=>popTot(p)===0), regular=cnt(p=>popTot(p)>=5);
 
   html+=`<div class="kpi-grid">
     <div class="kpi"><div class="kpi-label">Тіркеулі халық${POP.asOf?' ('+POP.asOf+')':''}</div><div class="kpi-value">${ayFmt(T)}</div><div class="kpi-extra">${Object.keys(grp(p=>p.uch)).length} учаске</div></div>
@@ -5401,7 +5406,8 @@ function popRender(){
 
   if(!svcOn){
     html+=`<div class="alert warn"><div class="alert-icon">⚠️</div><div><div class="alert-text">
-      <strong>Келу жиілігі есептелмеді.</strong> «💳 Төлем жүйесі» бөліміне қызмет выгрузкаларын жүктеңіз — сонда «мүлдем келмеген / бір рет / тұрақты» жіктеуі шығады.
+      <strong>Келу жиілігі есептелмеді</strong> — қызмет тарихының шикі дерегі жоқ.${POP.aggOnly?` Серверде <strong>${POP.aggOnly}</strong> ай агрегат сақталған, бірақ агрегатта пациент бойынша жол жоқ.`:''}
+      <br>Осы сессияда <strong>«💳 Төлем жүйесі»</strong> және <strong>«📤 Сыртқы бағыттар»</strong> бөлімдеріне выгрузка файлдарын жүктеңіз, сосын осында қайта оралыңыз.
     </div></div></div>`;
   }
 
@@ -5415,10 +5421,16 @@ function popRender(){
     return h+'</table></div>';
   };
 
+  if(svcOn){
+    html+=`<div class="alert" style="background:#eff6ff;border-color:#c7d2fe"><div class="alert-icon">🔗</div><div><div class="alert-text">
+      Қызмет тарихы: <strong>${POP.srcMonths}</strong> ай шикі дерек, <strong>${ayFmt(POP.scanned)}</strong> жазба қаралды
+      («💳 Төлем жүйесі» + «📤 Сыртқы бағыттар» бөлімдерінен).
+    </div></div></div>`;
+  }
   html+=tbl('⚧ Жынысы бойынша', grp(p=>p.sex));
   html+=tbl('👥 Жас тобы бойынша', grp(p=>popAgeGrp(p.dob)), POP_AGES);
   html+=tbl('🏷 Санаты (ДамуМед)', grp(p=>p.cat));
-  if(svcOn) html+=tbl('🔁 Емге келу жиілігі', grp(p=>popFreqGrp(p.visits)), POP_FREQ);
+  if(svcOn) html+=tbl('🔁 Емге келу жиілігі', grp(p=>popFreqGrp(popTot(p))), POP_FREQ);
   html+=tbl('📞 Байланыс дерегі', grp(p=>p.hasTel?'Байланыс бар':'Байланыс ЖОҚ'));
   html+=tbl('💳 Сақтандыру мәртебесі', grp(p=>p.ins));
   const soc=grp(p=>p.soc);
@@ -5444,7 +5456,7 @@ function popRender(){
       <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='0-4').length)}</td>
       <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='65+').length)}</td>
       <td style="color:${nt>s.length*0.08?'#b45309':'inherit'}">${ayFmt(nt)}</td>
-      ${svcOn?`<td style="color:${s.filter(p=>p.visits===0).length>s.length*0.5?'#dc2626':'inherit'}">${ayFmt(s.filter(p=>p.visits===0).length)}</td><td>${ayFmt(s.filter(p=>p.visits>=5).length)}</td>`:''}</tr>`;
+      ${svcOn?`<td style="color:${s.filter(p=>popTot(p)===0).length>s.length*0.5?'#dc2626':'inherit'}">${ayFmt(s.filter(p=>popTot(p)===0).length)}</td><td>${ayFmt(s.filter(p=>popTot(p)>=5).length)}</td>`:''}</tr>`;
   });
   html+='</table></div><canvas id="popUchChart" height="'+Math.max(200,uchs.length*32)+'" style="margin-top:12px"></canvas></div>';
 
@@ -5455,7 +5467,7 @@ function popRender(){
     POP_AGES.forEach(ag=>{
       const s=A.filter(p=>popAgeGrp(p.dob)===ag);
       html+=`<tr><td><strong>${ag}</strong></td>`;
-      POP_FREQ.forEach(fq=>{ const n=s.filter(p=>popFreqGrp(p.visits)===fq).length;
+      POP_FREQ.forEach(fq=>{ const n=s.filter(p=>popFreqGrp(popTot(p))===fq).length;
         const share=s.length?n/s.length:0;
         html+=`<td style="background:rgba(37,99,235,${(share*0.35).toFixed(2)})">${ayFmt(n)} <span style="color:var(--ink-2);font-size:10.5px">${s.length?(share*100).toFixed(0)+'%':''}</span></td>`; });
       html+=`<td><strong>${ayFmt(s.length)}</strong></td></tr>`;
@@ -5478,7 +5490,7 @@ function popRender(){
   box.innerHTML=html;
 
   const us=uchs.map(u=>({u,n:A.filter(p=>p.uch===u).length,
-    nv:A.filter(p=>p.uch===u&&p.visits===0).length}));
+    nv:A.filter(p=>p.uch===u&&popTot(p)===0).length}));
   cmpChart('pop','popUchChart',{type:'bar',data:{labels:us.map(x=>x.u),
     datasets:[{label:'Тіркеулі халық',data:us.map(x=>x.n),backgroundColor:'#2563eb'}]
       .concat(svcOn?[{label:'Мүлдем келмеген',data:us.map(x=>x.nv),backgroundColor:'#dc2626'}]:[])},
