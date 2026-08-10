@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.1</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1124,7 +1124,7 @@
 
   <section class="section" id="prof">
     <div class="section-head"><h1 class="section-title">Профилактика / Д-есеп мониторингі</h1>
-      <div class="section-sub">«Д-учет без онкологии» айлық выгрузкаларын жүкте. Учаске бойынша: қай учаскеде қанша науқас, 65+, ЖФВ, повод-кодтау сәйкестігі. Мейіргерге басымдық — санмен, пациент атынсыз (нақты тізім ДамуМедте).</div></div>
+      <div class="section-sub">«Д-учет без онкологии» айлық выгрузкаларын және «Список пациентов, состоящих/снятых на учете» тізімін жүкте. Учаске бойынша: қай учаскеде қанша науқас, 65+, ЖФВ, повод-кодтау сәйкестігі. Мейіргерге басымдық — санмен, пациент атынсыз (нақты тізім ДамуМедте).</div></div>
     <div class="card">
       <div class="card-title">📂 «Д-учет без онкологии» файлдарын жүктеу (айлық)</div>
       <input type="file" id="profFiles" multiple accept=".xlsx,.xls" style="font-size:13px">
@@ -1257,7 +1257,7 @@
 
 <script>
 // Пароль ашық сақталмайды — тек SHA-256 хеші (public кодта да қауіпсіз)
-const PWD_HASH = '2da113390f200b11b2c11797281d5765d4ea1654d89a00678a13e422beb029eb';
+const PWD_HASH = 'b7915cc901127ff410feed7d3612d13cb7e7685982a0f4148d998a0953fa5c27';
 async function sha256Hex(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -3477,7 +3477,7 @@ function _storeSet(key,val){
    Токен ретінде ЛОГИН ПАРОЛІ қолданылады (бөлек токен есте сақтаудың қажеті жоқ).
    ⚠️ Apps Script кодындағы API_TOKEN логин паролімен ДӘЛ БІРДЕЙ болуы керек.
    ============================================================ */
-const STORE_DEFAULT_URL = '';   // ← мысалы: 'https://script.google.com/macros/s/AKfy.../exec'
+const STORE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzCxrOCWT_Pp3wO_ocm_Io6_rPMlLLkhyv47haSf5QS1edt9tK_tG_0jxgn_OQuZ9O_dg/exec';
 
 const STORE = {
   apiUrl: STORE_DEFAULT_URL || _storeGet('ayan_econ_api') || '',
@@ -4394,6 +4394,224 @@ function refClear(){ REF.months={}; REF.log=[]; cmpClearCharts('ref'); cmpEl('re
    Дереккөз: «Д-учет без онкологии» (учаске-деңгейлі агрегат, айлық).
    Пациент дерегі ЖОҚ — тек учаске × сан. Қауіпсіз.
    ============================================================ */
+
+/* ============================================================
+   🩺 Д-ЕСЕП ПАЦИЕНТ-ДЕҢГЕЙЛІ ТАЛДАУ (Профилактика бөлімінің ішінде)
+   Дереккөз: «Список пациентов, состоящих/снятых на учете».
+   Қызмет тарихы — «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдерінен,
+   байланыс — «🚪 Қызмет алмағандар», тіркелу — «📋 Тіркелу» бөлімінен.
+   Пациент дерегі экранға да, серверге де ШЫҚПАЙДЫ — тек агрегат.
+   ============================================================ */
+const DREG = { people:new Map(), log:[], scanned:0, srcMonths:0 };
+const DREG_DX = {A:'Инфекция',B:'Инфекция',C:'Онкология',D:'Қан/ісік',E:'Эндокрин (диабет и т.б.)',
+  F:'Психика',G:'Жүйке',H:'Көз/құлақ',I:'Қан айналымы (гипертония, жүрек)',J:'Тыныс алу',K:'Ас қорыту',
+  L:'Тері',M:'Сүйек-бұлшықет',N:'Несеп-жыныс',O:'Жүктілік',P:'Перинаталды',Q:'Туа біткен',R:'Симптом',
+  S:'Жарақат',T:'Жарақат',Z:'Бақылау/скрининг'};
+
+function dregDate(s){ const m=String(s||'').match(/(\d{2})\.(\d{2})\.(\d{4})/); return m?`${m[3]}-${m[2]}-${m[1]}`:''; }
+function dregIsList(H){ const t=H.map(h=>String(h).toLowerCase()).join('|');
+  return /группы учета/.test(t) && /иин/.test(t); }
+
+function dregParse(rows, hr, H, fname){
+  const idx=(...k)=>{ const L=H.map(h=>String(h||'').toLowerCase());
+    for(const x of k){ const i=L.findIndex(h=>h.includes(x)); if(i>=0) return i; } return -1; };
+  const ci={ iin:idx('иин'), fio:idx('фио пациента'), grp:idx('группы учета'), mkb:idx('код диагноза','мкб'),
+    dx:idx('диагнозы'), uch:idx('участок'), sex:idx('пол'), yr:idx('год рождения'),
+    take:idx('дата взятия'), off:idx('дата снятия'), offR:idx('причина снятия') };
+  /* Файл ПАЦИЕНТ БОЙЫНША ТОПТАЛҒАН:
+     — ЖСН тек топтың бірінші жолында, келесі жолдар сол пациенттің ҚОСЫМША ДИАГНОЗДАРЫ
+     — есеп бет сайын тақырыпты қайталайды, әрі баған нөмірлеу жолы бар — оларды өткіземіз */
+  let cur=null, added=0, regs=0;
+  rows.slice(hr+1).forEach(r=>{
+    const raw=String(r[ci.iin]||'').trim();
+    if(/иин/i.test(raw)) { cur=null; return; }                 // қайталанған тақырып
+    const dig=raw.replace(/\D/g,'');
+    const mkb=String(ci.mkb>=0?r[ci.mkb]:'').trim().toUpperCase();
+    if(dig.length===1 && !mkb) return;                          // баған нөмірлеу жолы
+    if(dig.length===12){
+      cur=dig;
+      if(!DREG.people.has(cur)){
+        DREG.people.set(cur,{
+          uch: ayClean(ci.uch>=0?r[ci.uch]:'')||'—',
+          sex: String(ci.sex>=0?r[ci.sex]:'').trim()||'—',
+          yr: +String(ci.yr>=0?r[ci.yr]:'').replace(/\D/g,'')||0,
+          regs:[], visits:0, ext:0, last:'', svc:{}
+        });
+        added++;
+      }
+    }
+    if(!cur || !mkb) return;
+    const p=DREG.people.get(cur); if(!p) return;
+    if(!p.uch || p.uch==='—'){ const u=ayClean(ci.uch>=0?r[ci.uch]:''); if(u) p.uch=u; }
+    const off=dregDate(ci.off>=0?r[ci.off]:'');
+    p.regs.push({
+      grp: ayClean(ci.grp>=0?r[ci.grp]:'')||'—',
+      mkb, dx: ayClean(ci.dx>=0?r[ci.dx]:'')||'',
+      take: dregDate(ci.take>=0?r[ci.take]:''),
+      off, offR: ayClean(ci.offR>=0?r[ci.offR]:'')||''
+    });
+    regs++;
+  });
+  DREG.log.push({name:fname, ok:true, info:'Д-есеп тізімі · +'+ayFmt(added)+' пациент · '+ayFmt(regs)+' диагноз жазбасы'});
+}
+
+/* Қызмет тарихын басқа бөлімдерден тарту */
+function dregMatch(){
+  DREG.people.forEach(p=>{ p.visits=0; p.ext=0; p.last=''; p.svc={}; });
+  DREG.scanned=0; DREG.srcMonths=0;
+  const apply=(M,isExt)=>{
+    if(!M||!M.data||!M.header) return;
+    const iI=cmpCol(M.header,'ИИН','иин');
+    let iD=cmpCol(M.header,'Дата выполнения','дата выполнения');
+    if(iD<0) iD=cmpCol(M.header,'Дата создания','дата создания');
+    const iS=cmpCol(M.header,'Наименование услуги','наименование');
+    if(iI<0) return;
+    DREG.srcMonths++;
+    M.data.forEach(r=>{
+      const iin=String(r[iI]||'').replace(/\D/g,''); if(iin.length!==12) return;
+      DREG.scanned++;
+      const p=DREG.people.get(iin); if(!p) return;
+      if(isExt) p.ext++; else p.visits++;
+      const d=iD>=0?dregDate(r[iD]):''; if(d && d>p.last) p.last=d;
+      const s=iS>=0?ayClean(r[iS]):''; if(s) p.svc[s]=(p.svc[s]||0)+1;
+    });
+  };
+  if(typeof PSY!=='undefined') Object.keys(PSY.months).forEach(k=>apply(PSY.months[k],false));
+  if(typeof REF!=='undefined') Object.keys(REF.months).forEach(k=>{const M=REF.months[k]; if(M&&!M._agg) apply(M,true);});
+}
+
+function dregExportCsv(kind){
+  const A=[...DREG.people.entries()].filter(([,p])=>(p.regs||[]).some(r=>!r.off));
+  let rows=A;
+  if(kind==='novisit') rows=A.filter(([,p])=>p.visits+p.ext===0);
+  else if(kind==='rare') rows=A.filter(([,p])=>p.visits+p.ext>0 && p.visits+p.ext<3);
+  if(!rows.length){ alert('Сүзгіге сай жазба жоқ'); return; }
+  const head=['Учаске','ЖСН','Жынысы','Туған жылы','Есеп тобы','МКБ-10','Есепке алынған','Визит (ішкі)','Сыртқы жолдама','Соңғы қызмет'];
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=[head.map(esc).join(';')];
+  rows.sort((a,b)=>(a[1].visits+a[1].ext)-(b[1].visits+b[1].ext));
+  rows.forEach(([iin,p])=>{
+    const ar=(p.regs||[]).filter(r=>!r.off);
+    lines.push([p.uch,iin,p.sex,p.yr||'',ar.map(r=>r.grp).join(' / '),ar.map(r=>r.mkb).join(' / '),
+      ar.map(r=>r.take).filter(Boolean).sort()[0]||'',p.visits,p.ext,p.last||'—'].map(esc).join(';'));
+  });
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='D-esep_'+(kind||'barlygy')+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+/* Профилактика бөліміне қосылатын карта */
+function dregRender(){
+  if(!DREG.people.size) return '';
+  const A=[...DREG.people.values()];
+  const act=A.filter(p=>(p.regs||[]).some(r=>!r.off));
+  const T=act.length;
+  const svcOn=DREG.srcMonths>0;
+  const tot=p=>p.visits+p.ext;
+  const never=act.filter(p=>tot(p)===0);
+  const rare=act.filter(p=>tot(p)>0&&tot(p)<3);
+  const ok=act.filter(p=>tot(p)>=3);
+  const pct=n=>cmpPct(n,T);
+
+  let h=`<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Д-есеп пациенттері — қызмет талдауы</div>`;
+  h+=`<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">
+    Дереккөз: «Список пациентов, состоящих/снятых на учете». Қызмет тарихы «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдерінен алынды
+    (${DREG.srcMonths} ай, ${ayFmt(DREG.scanned)} жазба қаралды).</div>`;
+
+  h+=`<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Д-есепте (белсенді)</div><div class="kpi-value">${ayFmt(T)}</div><div class="kpi-extra">толық шығарылған: ${ayFmt(A.length-T)} · диагноз: ${ayFmt(act.reduce((a,p)=>a+(p.regs||[]).filter(r=>!r.off).length,0))}</div></div>
+    <div class="kpi ${svcOn&&never.length?'warn':''}"><div class="kpi-label">Бірде-бір қызмет алмаған</div><div class="kpi-value" style="color:${never.length?'#dc2626':'inherit'}">${svcOn?ayFmt(never.length):'—'}</div><div class="kpi-extra">${svcOn?pct(never.length):'қызмет дерегі жоқ'}</div></div>
+    <div class="kpi"><div class="kpi-label">Сирек (1–2 рет)</div><div class="kpi-value">${svcOn?ayFmt(rare.length):'—'}</div><div class="kpi-extra">${svcOn?pct(rare.length):''}</div></div>
+    <div class="kpi"><div class="kpi-label">Тұрақты (3+)</div><div class="kpi-value" style="color:#16a34a">${svcOn?ayFmt(ok.length):'—'}</div><div class="kpi-extra">${svcOn?pct(ok.length):''}</div></div>
+  </div>`;
+
+  if(!svcOn){
+    h+=`<div class="alert warn"><div class="alert-icon">⚠️</div><div><div class="alert-text">
+      <strong>Қызмет дерегі жүктелмеген.</strong> «💳 Төлем жүйесі» және «📤 Сыртқы бағыттар» бөлімдеріне выгрузка жүктеңіз — сонда Д-есеп пациенттерінің қызмет тарихы есептеледі.
+    </div></div></div></div>`;
+    return h;
+  }
+
+  // Клиникалық сөйлем
+  if(never.length){
+    const topU=Object.entries(never.reduce((o,p)=>{o[p.uch]=(o[p.uch]||0)+1;return o;},{})).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    h+=`<div style="padding:11px;border-radius:9px;margin-top:10px;background:#fef2f2;border:1px solid #f3b4b4">
+      <div style="font-weight:700;font-size:13px;margin-bottom:5px">🔴 Д-есепте тұр, бірақ бірде-бір қызмет алмаған</div>
+      <div style="font-size:12px;margin-bottom:6px"><strong style="color:#dc2626;font-size:15px">${ayFmt(never.length)}</strong> науқас (${pct(never.length)}) · ең көбі: ${topU.map(([u,n])=>u.replace(' общей практики','-уч')+' ('+n+')').join(', ')}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">
+        💬 <strong>Дәрігерге:</strong> «Бұл ${ayFmt(never.length)} науқас созылмалы аурумен Д-есепте тұр, бірақ қаралған кезеңде бірде-бір рет қабылдауға келмеген.
+        Диспансерлік бақылау — тіркеу емес, <strong>тұрақты қарау</strong>. Бақыланбаған созылмалы ауру асқынумен ғана көрінеді.»
+      </div></div>`;
+  }
+
+  // Диагноз тобы бойынша
+  const byDx={};
+  act.forEach(p=>{
+    const classes=new Set((p.regs||[]).filter(r=>!r.off).map(r=>(r.mkb||'?')[0]));
+    classes.forEach(c=>{ const n=DREG_DX[c]||('Басқа ('+c+')');
+      byDx[n]=byDx[n]||{n:0,never:0,vis:0}; byDx[n].n++; if(tot(p)===0) byDx[n].never++; byDx[n].vis+=tot(p); });
+  });
+  h+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Ауру класы бойынша</div>
+    <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Ауру класы</th><th>Д-есепте</th><th>Қызмет алмаған</th><th>%</th><th>Орташа визит</th></tr>`;
+  Object.entries(byDx).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
+    h+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td>
+      <td style="color:${v.never>v.n*0.3?'#dc2626':'inherit'}">${ayFmt(v.never)}</td>
+      <td>${cmpPct(v.never,v.n)}</td><td>${(v.vis/v.n).toFixed(1)}</td></tr>`;
+  });
+  h+='</table></div></div>';
+
+  // Учаске бойынша
+  const byU={};
+  act.forEach(p=>{ byU[p.uch]=byU[p.uch]||{n:0,never:0,vis:0}; byU[p.uch].n++; if(tot(p)===0) byU[p.uch].never++; byU[p.uch].vis+=tot(p); });
+  h+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Учаске бойынша</div>
+    <table style="font-size:12px"><tr><th>Учаске</th><th>Д-есепте</th><th>Қызмет алмаған</th><th>%</th><th>Орташа визит</th></tr>`;
+  Object.entries(byU).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
+    h+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td>
+      <td style="color:${v.never>v.n*0.3?'#dc2626':'inherit'}">${ayFmt(v.never)}</td>
+      <td>${cmpPct(v.never,v.n)}</td><td>${(v.vis/v.n).toFixed(1)}</td></tr>`;
+  });
+  h+='</table></div>';
+
+  // Қандай қызметтер алған
+  const svcAll={};
+  act.forEach(p=>Object.entries(p.svc).forEach(([s,n])=>{ svcAll[s]=svcAll[s]||{n:0,pt:0}; svcAll[s].n+=n; svcAll[s].pt++; }));
+  const svcTop=Object.entries(svcAll).sort((a,b)=>b[1].n-a[1].n).slice(0,15);
+  if(svcTop.length){
+    h+=`<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Д-есеп пациенттері қандай қызмет алған (топ-15)</div>
+      <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Қызмет</th><th>Рет</th><th>Пациент</th><th>Орташа</th></tr>`;
+    svcTop.forEach(([s,v])=>{ h+=`<tr><td>${s.slice(0,52)}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${ayFmt(v.pt)}</td><td>${(v.n/v.pt).toFixed(1)}</td></tr>`; });
+    h+='</table></div></div>';
+  }
+
+  // Басқа бөлімдермен қиылысу
+  let cross='';
+  if(typeof NOSVC!=='undefined' && NOSVC.people && NOSVC.people.length){
+    const ns=new Set(NOSVC.people.map(x=>String(x.iin||'').replace(/\D/g,'')));
+    const both=[...DREG.people.entries()].filter(([i,p])=>(p.regs||[]).some(r=>!r.off) && ns.has(i)).length;
+    if(both) cross+=`<div style="font-size:12.5px;margin-bottom:4px">🚪 «Қызмет алмағандар» тізімінде де бар: <strong>${ayFmt(both)}</strong> Д-есеп науқасы — екі дереккөз бір-бірін растайды.</div>`;
+  }
+  if(typeof ATT!=='undefined' && ATT.people && ATT.people.size){
+    const det=[...DREG.people.entries()].filter(([i,p])=>{ const a=ATT.people.get(i); return (p.regs||[]).some(r=>!r.off) && a && a.detached; }).length;
+    if(det) cross+=`<div style="font-size:12.5px;color:#b45309">📋 Тіркеуден шыққан, бірақ әлі Д-есепте: <strong>${ayFmt(det)}</strong> — тізімді тазалау керек.</div>`;
+  }
+  if(cross) h+=`<div style="margin-top:12px;padding:10px 12px;background:var(--bg-card-2);border-radius:9px">
+    <div style="font-weight:600;font-size:12.5px;margin-bottom:5px">🔗 Басқа бөлімдермен қиылысу</div>${cross}</div>`;
+
+  // CSV
+  h+=`<div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+    <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргер жұмыс парағы (CSV)</div>
+    <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px"><strong style="color:#b45309">Пациент дерегі бар</strong> — тек ішкі қолданысқа.</div>
+    <button class="icon-btn" onclick="dregExportCsv('novisit')" style="font-size:12px">Қызмет алмағандар (${ayFmt(never.length)})</button>
+    <button class="icon-btn" onclick="dregExportCsv('rare')" style="font-size:12px;margin-left:6px">Сирек келетіндер (${ayFmt(rare.length)})</button>
+    <button class="icon-btn" onclick="dregExportCsv('')" style="font-size:12px;margin-left:6px">Барлығы (${ayFmt(T)})</button>
+  </div>`;
+
+  h+='</div>';
+  return h;
+}
+
 const PROF = { months:{}, log:[] };  // months: {'YYYY-MM': {uchastki:[{name,total,dynObs,age65,age65obs,jfv,jfvObs}]}}
 
 function profPeriodFromName(name){
@@ -4412,8 +4630,15 @@ async function profHandle(files){
   for (const f of files){
     try {
       const rows = await profReadXlsx(f);
+      // Пациент-деңгейлі Д-есеп тізімі ме? (Группы учета + ИИН) — кезең тексерісінен БҰРЫН
+      let _hr=-1;
+      for(let i=0;i<8;i++){ const L=(rows[i]||[]).map(x=>String(x).toLowerCase());
+        if(L.some(x=>x.includes('иин')) && L.some(x=>x.includes('группы учета'))){ _hr=i; break; } }
+      if(_hr>=0){ dregParse(rows,_hr,rows[_hr],f.name); continue; }
+
       const period = profPeriodFromName(f.name);
       if(!period){ PROF.log.push({name:f.name, ok:false, info:'Кезең файл атауынан оқылмады (атауын өзгертпе)'}); continue; }
+
       const H = (rows[1]||[]).map(h=>String(h).toLowerCase());
       if(!H.some(h=>h.includes('участок')) || !H.some(h=>h.includes('всего состоит'))){
         PROF.log.push({name:f.name, ok:false, info:'Бұл «Д-учет без онкологии» форматы емес сияқты'}); continue;
@@ -4435,10 +4660,11 @@ async function profHandle(files){
     } catch(e){ PROF.log.push({name:f.name, ok:false, info:'Қате: '+e.message}); }
   }
   window._saveResultsGlobal['prof']=_saved;
+  if(DREG.people.size) dregMatch();
   profRender();
   _flashSaveSummary('prof');
 }
-function profClear(){ PROF.months={}; PROF.log=[]; cmpClearCharts('prof'); cmpEl('profReport').innerHTML=''; const el=cmpEl('profFiles'); if(el) el.value=''; }
+function profClear(){ PROF.months={}; PROF.log=[]; DREG.people=new Map(); DREG.log=[]; DREG.scanned=0; DREG.srcMonths=0; cmpClearCharts('prof'); cmpEl('profReport').innerHTML=''; const el=cmpEl('profFiles'); if(el) el.value=''; }
 
 /* ============================================================
    🔬 СКРИНИНГ ҚАМТУЫ
@@ -5771,9 +5997,10 @@ function workRender(){
 function profRender(){
   cmpClearCharts('prof');
   const box = cmpEl('profReport'); if(!box) return;
-  let html = (typeof storePanel==='function'?storePanel('prof'):'') + cmpStatusPanel(PROF.log);
+  let html = (typeof storePanel==='function'?storePanel('prof'):'') + cmpStatusPanel(PROF.log.concat(DREG.log));
+  const _dreg = (typeof dregRender==='function') ? dregRender() : '';
   const keys = Object.keys(PROF.months).sort();
-  if(!keys.length){ box.innerHTML = html; return; }
+  if(!keys.length){ box.innerHTML = html + _dreg; return; }
 
   const latest = keys[keys.length-1];
   const L = PROF.months[latest];
@@ -5869,6 +6096,8 @@ function profRender(){
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Д-есеп — созылмалы науқасты <strong>тұрақты бақылау</strong> жүйесі. Төменде сол жүйедегі нақты олқылықтар.</div>
       ${_clin}</div>`;
   }
+
+  html += _dreg;   // 🩺 пациент-деңгейлі талдау
 
   // Тренд график
   html += `<div class="card"><div class="card-title">📈 Д-есеп динамикасы (айма-ай)</div><canvas id="profTrend" height="110"></canvas></div>`;
