@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.4</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.5</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -1282,6 +1282,8 @@ async function tryLogin(){
       if (typeof STORE!=='undefined'){
         STORE.token = entered;
         sessionStorage.setItem('ayan_econ_pwd', entered);
+        try{ localStorage.removeItem('ayan_econ_token'); }catch(e){}   // ескі токен қалдығын тазалау
+        STORE.loaded = false; STORE.cache = null;                       // кэшті жаңарту
         if (!STORE.apiUrl && typeof STORE_DEFAULT_URL!=='undefined' && STORE_DEFAULT_URL) STORE.apiUrl = STORE_DEFAULT_URL;
       }
     }catch(e){}
@@ -1299,10 +1301,18 @@ document.getElementById('loginPwd').addEventListener('keypress', e => {
 // Авто-кіруді кейінге қалдырамыз — әйтпесе initApp ішіндегі `inited` (төменде `let`-пен жарияланған)
 // әлі инициализацияланбай тұрып шақырылып, "Cannot access before initialization" қатесін береді.
 setTimeout(function(){
-  if (sessionStorage.getItem('ayan_auth') === '1'){
-    try{ const p=sessionStorage.getItem('ayan_econ_pwd'); if(p && typeof STORE!=='undefined') STORE.token=p; }catch(e){}
-    showApp();
-  }
+  try{
+    if (sessionStorage.getItem('ayan_auth') === '1'){
+      const p = sessionStorage.getItem('ayan_econ_pwd');
+      if (p){
+        if (typeof STORE!=='undefined') STORE.token = p;
+        showApp();
+      } else {
+        // Ескі сессия: пароль сақталмаған → серверге қосылу үшін қайта кіру керек
+        sessionStorage.removeItem('ayan_auth');
+      }
+    }
+  }catch(e){}
 }, 0);
 document.getElementById('printDate').textContent = new Date().toLocaleDateString('ru-RU');
 
@@ -3481,7 +3491,9 @@ const STORE_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzCxrOCWT_Pp3
 
 const STORE = {
   apiUrl: STORE_DEFAULT_URL || _storeGet('ayan_econ_api') || '',
-  token: _storeGet('ayan_econ_token') || '',
+  /* Токен ТЕК логин паролінен алынады (localStorage-тағы ескі токен пайдаланылмайды —
+     әйтпесе пароль ауысқанда сервер «auth» қатесін береді). */
+  token: (function(){ try{ return sessionStorage.getItem('ayan_econ_pwd') || ''; }catch(e){ return ''; } })(),
   user: _storeGet('ayan_econ_user') || 'admin',
   cache: null,        // серверден жүктелген барлық дерек
   loaded: false,
