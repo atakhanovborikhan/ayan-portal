@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v14.8</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.1</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -3640,6 +3640,26 @@ function aggAkt(doc){
 /* Төлем жүйесі выгрузкасының ЕКІ нұсқасын да қолдау:
    — «старая версия»: «Исполнитель» + «Сумма» бағандары бар
    — «за месяц»: «ФИО Исполнителя» бар, «Сумма» ЖОҚ (Цена × Кол-во есептеледі) */
+
+/* Қызмет тарихына тәуелді бөлімдерді ҚАЙТА ЕСЕПТЕУ.
+   «Төлем жүйесі» / «Сыртқы бағыттар» бөлімдеріне жаңа файл жүктелген сайын шақырылады —
+   сонда Скрининг, Халық профилі, Тіркелу, Профилактика бөлімдері бірден жаңарады
+   (пайдаланушының табты ауыстыруын күтпейді). */
+function ayRecomputeDependents(){
+  try{ if(typeof SCR!=='undefined' && SCR.people && SCR.people.size){
+    if(typeof scrPullServices==='function') scrPullServices();
+    if(typeof scrRender==='function') scrRender(); } }catch(e){}
+  try{ if(typeof POP!=='undefined' && POP.people && POP.people.size){
+    if(typeof popMatch==='function') popMatch();
+    if(typeof popRender==='function') popRender(); } }catch(e){}
+  try{ if(typeof ATT!=='undefined' && ATT.people && ATT.people.size){
+    if(typeof attMatchServices==='function') attMatchServices();
+    if(typeof attRender==='function') attRender(); } }catch(e){}
+  try{ if(typeof DREG!=='undefined' && DREG.people && DREG.people.size){
+    if(typeof dregMatch==='function') dregMatch();
+    if(typeof profRender==='function') profRender(); } }catch(e){}
+}
+
 function psyExecCol(header){
   let i = cmpColExact(header,'исполнитель','мо');          // «Исполнитель» (МО емес)
   if (i>=0) return i;
@@ -3800,6 +3820,27 @@ function aggWork(key){
 /* ---- Скрининг агрегаты — ТЕК SCRQ жиынтығы.
        SCR.people (ЖСН/аты-жөні/туған күні) ЕШҚАШАН жіберілмейді. ---- */
 function aggScr(key){
+  /* Учаске × скрининг қамтуы — Телеграм ботқа арналған (тек САНДАР, пациент дерегі жоқ) */
+  let uchCov = {};
+  try{
+    if(typeof scrCompute==='function' && SCR.people && SCR.people.size){
+      const res = scrCompute();
+      res.forEach(o=>{
+        Object.keys(o.byUch||{}).forEach(u=>{
+          const b=o.byUch[u];
+          uchCov[u] = uchCov[u] || {};
+          uchCov[u][o.rule.id] = {
+            name: o.rule.name,
+            target: b.target||0,
+            done: b.done||0,
+            due: (b.due||[]).length,
+            never: (b.due||[]).filter(d=>!d.last).length
+          };
+        });
+      });
+    }
+  }catch(e){ uchCov = {}; }
+
   const out = {};
   Object.entries((typeof SCRQ!=='undefined' && SCRQ.lists) || {}).forEach(([k,o])=>{
     out[k] = { name:o.name, total:o.total, done:o.done, notDone:o.notDone, refuse:o.refuse,
@@ -3814,7 +3855,9 @@ function aggScr(key){
     detect:  S.reduce((a,o)=>a+o.detect,0),
     tod:     S.reduce((a,o)=>a+o.toD,0),
     m45nb:   S.reduce((a,o)=>a+(o.m45nb||0),0),
-    lists_json: out };
+    lists_json: out,
+    uchcov_json: uchCov,
+    scr_asof: (SCR.people && SCR.people.size) ? String(SCR.people.size) : '' };
 }
 
 if (typeof module!=='undefined') module.exports = {trendForecast, detectAnomalies, aggProtocol, aggSchet, aggAkt, aggPsy, aggRef, storeAssertClean};
@@ -4449,6 +4492,7 @@ async function refHandle(files){
   }
   window._saveResultsGlobal['ref']=_saveResults;
   refRender();
+  ayRecomputeDependents();   // тәуелді бөлімдерді бірден жаңарту
   _flashSaveSummary('ref');
 }
 function refClear(){ REF.months={}; REF.log=[]; cmpClearCharts('ref'); cmpEl('refReport').innerHTML=''; cmpEl('refFiles').value=''; }
@@ -5031,7 +5075,7 @@ function scrCompute(){
       const last = p.done[rule.id];
       const lim = new Date(today); lim.setFullYear(lim.getFullYear()-rule.years);
       if(last && last>=lim){ done++; byUch[u].done++; }
-      else byUch[u].due.push({name:p.name, age:a, last:last||null});
+      else byUch[u].due.push({name:p.name, age:a, sex:p.gender||"", last:last||null});
     });
     return {rule, target, done, due:target-done, byUch};
   });
@@ -5891,7 +5935,21 @@ function scrRender(){
       html += row;
     });
     html += `</table></div>
-      <button class="icon-btn" style="margin-top:10px" onclick="scrExportCsv()">📥 Жұмыс тізімін жүктеу (CSV)</button>
+      <div style="margin-top:14px;padding:11px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+        <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргерге жұмыс тізімі (CSV)</div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
+          Әр мейіргерге <strong>өз учаскесінің</strong> тізімін беріңіз. Тізімде ешқашан өтпегендер жоғарыда тұрады —
+          олар басымдық. Соңғы бағанда «Байланысқа шықты» белгісі бос қалдырылған.
+          <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа.
+        </div>
+        <button class="icon-btn" onclick="scrExportCsv()" style="font-size:12px">Барлығы</button>
+        ${uchList.map(u=>{
+          const n = res.reduce((a,o)=> a + (o.byUch[u] ? o.byUch[u].due.length : 0), 0);
+          if(!n) return '';
+          const label = u.replace(' общей практики','-уч');
+          return `<button class="icon-btn" onclick="scrExportCsv('${String(u).replace(/'/g,"\\'")}')" style="font-size:12px;margin-left:6px">${label} (${ayFmt(n)})</button>`;
+        }).join('')}
+      </div>
       </div>`;
   }
 
@@ -5899,23 +5957,33 @@ function scrRender(){
 }
 
 /* Жұмыс тізімін CSV етіп жүктеу — тек браузерде, серверге бармайды */
-function scrExportCsv(){
+/* Жұмыс тізімі CSV. uchFilter берілсе — тек сол учаске (мейіргерге өз тізімі). */
+function scrExportCsv(uchFilter){
   const res = scrCompute();
-  const lines = ['Учаске;Скрининг;Аты-жөні;Жасы;Соңғы өткені'];
+  const esc = v => '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const head = ['Учаске','Скрининг','Аты-жөні','Жасы','Жынысы','Соңғы өткені','Мәртебесі','Байланысқа шықты (белгі)'];
+  const rows = [];
   res.forEach(o=>{
     Object.keys(o.byUch).sort().forEach(u=>{
+      if(uchFilter && u!==uchFilter) return;
       o.byUch[u].due.forEach(d=>{
-        lines.push([u, o.rule.name, d.name||'—', d.age,
-          d.last ? d.last.toLocaleDateString('ru-RU') : 'мүлде жоқ'].join(';'));
+        rows.push([u, o.rule.name, d.name||'—', d.age, d.sex||'',
+          d.last ? d.last.toLocaleDateString('ru-RU') : 'мүлде жоқ',
+          d.last ? 'мерзімі өткен' : 'ешқашан өтпеген', '']);
       });
     });
   });
-  const blob = new Blob(['\ufeff'+lines.join('\n')], {type:'text/csv;charset=utf-8'});
+  if(!rows.length){ alert(uchFilter ? ('«'+uchFilter+'» бойынша мерзімі жеткен пациент жоқ') : 'Тізім бос'); return; }
+  // Ешқашан өтпегендер жоғарыда — олар басымдық
+  rows.sort((a,b)=> (a[6]===b[6] ? String(a[1]).localeCompare(String(b[1])) : (a[6]==='ешқашан өтпеген' ? -1 : 1)));
+  const lines = [head.map(esc).join(';')].concat(rows.map(r=>r.map(esc).join(';')));
+  const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'skrining_tizim_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  a.download = 'skrining_' + (uchFilter ? uchFilter.replace(/[^0-9А-Яа-яA-Za-z]+/g,'_').slice(0,20) : 'barlyq')
+    + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
 function scrClear(){
@@ -6698,6 +6766,7 @@ async function psyHandle(files){
   }
   window._saveResultsGlobal['psy']=_saveResults;
   psyRender();
+  ayRecomputeDependents();   // тәуелді бөлімдерді бірден жаңарту
   _flashSaveSummary('psy');
 }
 function psyClear(){ PSY.months={}; PSY.log=[]; cmpClearCharts('psy'); cmpEl('psyReport').innerHTML=''; cmpEl('psyFiles').value=''; }
