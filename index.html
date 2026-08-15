@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.2</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.3</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4076,6 +4076,15 @@ function storeMergeIntoSections(){
   });
   // Скрининг (SCRQ агрегаты; пациент тізімі серверде ЖОҚ)
   (SERVER_DATA.clin_scr||[]).forEach(row=>{
+    // Серверде сақталған учаске қамтуы — файлсыз көрсету үшін
+    if (typeof SCR!=='undefined'){
+      let uc = row.uchcov_json;
+      if (typeof uc === 'string'){ try{ uc = JSON.parse(uc); }catch(e){ uc = null; } }
+      if (uc && Object.keys(uc).length){
+        SCR.srvCov = { period: _normPeriod(row.period)||String(row.period||''), uchcov: uc,
+                       total:+row.total||0, done:+row.done||0 };
+      }
+    }
     if (typeof SCRQ==='undefined' || Object.keys(SCRQ.lists).length) return;
     const L=row.lists_json||{};
     Object.entries(L).forEach(([k,o])=>{
@@ -5886,7 +5895,42 @@ function scrRender(){
   const box = cmpEl('scrReport'); if(!box) return;
   let html = (typeof storePanel==='function'?storePanel('scr'):'') + cmpStatusPanel(SCR.log.concat(SCRQ.log));
   html += scrqRender();                       // 🔬 Скрининг сапасы (тізім файлдары)
-  if(!SCR.people.size){ box.innerHTML = html; return; }
+  if(!SCR.people.size){
+    // Файл жүктелмеген — серверде сақталған соңғы қамтуды көрсетеміз
+    if(SCR.srvCov && SCR.srvCov.uchcov){
+      const S=SCR.srvCov, uc=S.uchcov;
+      const names={};
+      Object.values(uc).forEach(items=>Object.entries(items).forEach(([id,v])=>{ names[id]=v.name||id; }));
+      const tot={}; Object.keys(names).forEach(id=>tot[id]={t:0,d:0});
+      Object.values(uc).forEach(items=>Object.entries(items).forEach(([id,v])=>{
+        tot[id].t+=(+v.target||0); tot[id].d+=(+v.due||0); }));
+      html += `<div class="alert" style="background:#eff6ff;border-color:#c7d2fe"><div class="alert-icon">☁️</div><div><div class="alert-text">
+        <strong>Серверде сақталған қамту көрсетілуде</strong> (кезең: ${S.period}).
+        Бұл — соңғы рет есептелген нәтиже. Жаңарту үшін төмендегі өрістерге
+        «Прикрепленное население» тізімін жүктеңіз (қызмет тарихы «Төлем жүйесі» мен
+        «Сыртқы бағыттар» бөлімдерінен автоматты алынады).
+      </div></div></div>`;
+      html += `<div class="card"><div class="card-title">📋 Скрининг қамтуы — серверлік дерек</div>
+        <div style="overflow-x:auto"><table><tr><th>Скрининг</th><th>Нысаналы топ</th><th>Өткен</th><th>Керек</th><th>Қамту</th></tr>`;
+      Object.keys(names).forEach(id=>{
+        const t=tot[id].t, d=tot[id].d, done=t-d, p=t?(done/t*100):0;
+        html += `<tr><td>${names[id]}</td><td>${ayFmt(t)}</td><td>${ayFmt(done)}</td>
+          <td><b>${ayFmt(d)}</b></td><td style="color:${p<30?'#dc2626':p<60?'#b45309':'#16a34a'}"><b>${p.toFixed(1)}%</b></td></tr>`;
+      });
+      html += `</table></div>`;
+      html += `<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Учаске бойынша (керек саны)</div>
+        <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Учаске</th>${Object.keys(names).map(id=>`<th>${String(names[id]).split('(')[0].trim()}</th>`).join('')}<th>Барлығы</th></tr>`;
+      Object.keys(uc).sort().forEach(u=>{
+        let sum=0;
+        let row=`<tr><td><b>${u}</b></td>`;
+        Object.keys(names).forEach(id=>{ const v=uc[u][id]||{}; const d=+v.due||0; sum+=d;
+          row+=`<td>${d?ayFmt(d):'—'}</td>`; });
+        html += row + `<td><b>${ayFmt(sum)}</b></td></tr>`;
+      });
+      html += `</table></div></div></div>`;
+    }
+    box.innerHTML = html; return;
+  }
 
   // Дереккөз туралы ақпарат (қызмет тарихы басқа бөлімдерден алынады)
   if(SCR.pulled){
@@ -7333,9 +7377,11 @@ document.addEventListener('DOMContentLoaded', function(){
       if (typeof storeInitAll!=='function') return;
       storeInitAll().then(function(){
         if (typeof storeFlash==='function'){
-          ['con','pro','sch','act','psy','ref'].forEach(function(sec){
+          ['con','pro','sch','act','psy','ref','prof','work','scr','nosvc','att','pop'].forEach(function(sec){
             var el=document.getElementById(sec+'StoreFlash');
             if(el && typeof _countServerRows==='function') storeFlash(sec, '☁️ серверден '+_countServerRows()+' жазба жүктелді');
+            // Бөлімді бірден қайта сызу — дерек дайын тұрсын
+            var fn=window[sec+'Render']; if(fn){ try{ fn(); }catch(e){} }
           });
         }
       }).catch(function(e){
