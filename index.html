@@ -601,7 +601,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.3</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -5875,6 +5875,163 @@ function nosvcRender(){
 
 /* Скрининг агрегатын серверге сақтау (бот осыдан оқиды).
    silent=true → нәтижені _flashSaveSummary өзі көрсетеді */
+
+/* ============================================================
+   📲 ПАЦИЕНТ-ДЕҢГЕЙЛІ СИНХРОНДАУ — Телеграм ботқа
+   ------------------------------------------------------------
+   Мейіргерге ботта нақты тізім беру үшін пациент күйін боттың
+   базасына жібереді (ScreeningStatus парағы).
+
+   ⚠️ БҰЛ ЖЕРДЕ ПАЦИЕНТ ДЕРЕГІ ЖІБЕРІЛЕДІ — сондықтан:
+     • бөлек кілт (sync_key) қажет, логин паролінен басқа
+     • ботта мейіргер тек өз учаскесін көреді
+     • әр оқу аудит журналына жазылады
+   Аты-жөн мен телефон қызмет файлдарынан жиналады (халық тізімінде
+   тек инициал болғандықтан).
+   ============================================================ */
+const SCRSYNC = { key:'', lastResult:null };
+
+function scrSyncKeyGet(){
+  try{ return SCRSYNC.key || localStorage.getItem('ayan_scr_sync_key') || ''; }catch(e){ return SCRSYNC.key||''; }
+}
+function scrSyncKeySet(v){
+  SCRSYNC.key = String(v||'').trim();
+  try{ localStorage.setItem('ayan_scr_sync_key', SCRSYNC.key); }catch(e){}
+}
+
+/* Аты-жөн + телефон сөздігі: қызмет файлдарынан (толық ФИО бар) */
+function scrBuildNameDict(){
+  const dict = new Map();
+  const take = (M)=>{
+    if(!M || !M.data || !M.header) return;
+    const iI = cmpCol(M.header,'ИИН','иин');
+    const iF = cmpCol(M.header,'ФИО пациента','фио пациент');
+    const iT = cmpCol(M.header,'Телефон','телефон');
+    if(iI<0 || iF<0) return;
+    M.data.forEach(r=>{
+      const iin=String(r[iI]||'').replace(/\D/g,''); if(iin.length!==12) return;
+      const nm=ayClean(r[iF]); if(!nm || nm.split(/\s+/).length<2) return;
+      const cur = dict.get(iin) || {};
+      if(!cur.name) cur.name = nm;
+      if(iT>=0 && !cur.tel){ const t=ayClean(r[iT]); if(t) cur.tel=t; }
+      dict.set(iin, cur);
+    });
+  };
+  if(typeof PSY!=='undefined') Object.keys(PSY.months).forEach(k=>take(PSY.months[k]));
+  if(typeof REF!=='undefined') Object.keys(REF.months).forEach(k=>take(REF.months[k]));
+  // «Қызмет алмағандар» бөлімі — телефоны бар, толық аты-жөн
+  if(typeof NOSVC!=='undefined' && NOSVC.people && NOSVC.people.length){
+    NOSVC.people.forEach(p=>{
+      const iin=String(p.iin||'').replace(/\D/g,''); if(iin.length!==12) return;
+      const cur=dict.get(iin)||{};
+      if(!cur.name && p.fio && String(p.fio).split(/\s+/).length>=2) cur.name=p.fio;
+      if(!cur.tel && p.phone) cur.tel=p.phone;
+      dict.set(iin,cur);
+    });
+  }
+  return dict;
+}
+
+/* Синхрондауға жолдар дайындау */
+function scrBuildSyncRows(){
+  if(!SCR.people.size) return {rows:[], stat:null};
+  const dict = scrBuildNameDict();
+  const res = scrCompute();
+  // Әр пациент үшін: қай скринингте «керек»
+  const dueMap = new Map();   // iin → {colo:'DUE', ...}
+  const inGroup = new Map();  // iin → {colo:true,...} (топқа кіреді)
+  res.forEach(o=>{
+    const rid = o.rule.id;
+    Object.keys(o.byUch||{}).forEach(u=>{
+      (o.byUch[u].due||[]).forEach(d=>{ /* аты бойынша сәйкестендіру мүмкін емес */ });
+    });
+  });
+  // Тікелей SCR.people бойынша қайта есептейміз (дәлірек)
+  const now = new Date();
+  const rows = [];
+  let named=0, phoned=0;
+  SCR.people.forEach((p, iin)=>{
+    const cells = { colo:'', mammo:'', cerv:'', flg:'' };
+    let anyDue = false, anyGroup = false;
+    SCR_RULES.forEach(rule=>{
+      const age = p.birth ? Math.floor((now - p.birth)/(365.25*864e5)) : null;
+      if(age===null) return;
+      if(age < rule.ageFrom || age > rule.ageTo) return;
+      if(rule.gender && p.gender !== rule.gender) return;
+      anyGroup = true;
+      const last = p.done ? p.done[rule.id] : null;
+      const lim = new Date(now); lim.setFullYear(lim.getFullYear() - rule.years);
+      if(last && last >= lim){
+        cells[rule.id] = 'OK';
+      } else {
+        cells[rule.id] = 'DUE'; anyDue = true;
+      }
+    });
+    if(!anyGroup || !anyDue) return;          // тек «керек» барларды жібереміз
+    const d = dict.get(iin) || {};
+    if(d.name) named++;
+    if(d.tel) phoned++;
+    rows.push([
+      iin,
+      p.uch || '—',
+      d.name || '',
+      d.tel || '',
+      p.gender || '',
+      p.birth ? p.birth.getFullYear() : '',
+      cells.colo, cells.mammo, cells.cerv, cells.flg
+    ]);
+  });
+  return { rows, stat:{ total:rows.length, named, phoned, dict:dict.size } };
+}
+
+/* Серверге бөліп-бөліп жіберу */
+async function scrSyncToBot(){
+  const key = scrSyncKeyGet();
+  if(!key){ alert('Алдымен синхрондау кілтін енгізіңіз (Apps Script-тегі SCR_SYNC_KEY).'); return; }
+  if(!storeConfigured()){ alert('Сервер бапталмаған'); return; }
+  if(!SCR.people.size){ alert('Алдымен халық тізімін жүктеңіз'); return; }
+
+  const built = scrBuildSyncRows();
+  if(!built.rows.length){ alert('Жіберуге жазба жоқ'); return; }
+
+  const btn = document.getElementById('scrSyncBtn');
+  const st = document.getElementById('scrSyncStatus');
+  if(btn) btn.disabled = true;
+
+  const CHUNK = 500;
+  const total = built.rows.length;
+  let sent = 0, err = null;
+  try{
+    for(let i=0; i<total; i+=CHUNK){
+      const part = built.rows.slice(i, i+CHUNK);
+      if(st) st.innerHTML = `⏳ Жіберілуде: ${ayFmt(i)} / ${ayFmt(total)}…`;
+      const res = await _fetchTimeout(STORE.apiUrl, {
+        method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({
+          action:'screening.sync',
+          auth:{ telegram_id: STORE.user || 'portal' },
+          sync_key: key,
+          mode: (i===0 ? 'replace' : 'append'),
+          rows: part
+        })
+      }, 60000);
+      const j = await res.json();
+      if(!j || j.ok===false){ err = (j && j.error) || 'белгісіз қате'; break; }
+      sent += part.length;
+    }
+  }catch(e){ err = e.message; }
+
+  if(btn) btn.disabled = false;
+  if(err){
+    if(st) st.innerHTML = `<span style="color:#dc2626">❌ Қате: ${String(err).slice(0,120)}</span>`;
+  } else {
+    SCRSYNC.lastResult = { total:sent, at:new Date() };
+    if(st) st.innerHTML = `<span style="color:#16a34a">✅ ${ayFmt(sent)} пациент ботқа жіберілді</span>
+      <span style="color:var(--ink-2)"> · аты-жөнімен: ${ayFmt(built.stat.named)} (${cmpPct(built.stat.named,sent)})
+      · телефонымен: ${ayFmt(built.stat.phoned)} (${cmpPct(built.stat.phoned,sent)})</span>`;
+  }
+}
+
 async function scrSaveToServer(silent){
   if(!(Object.keys(SCRQ.lists).length || SCR.people.size)){
     if(!silent) alert('Алдымен файл жүктеңіз');
@@ -5940,6 +6097,27 @@ function scrRender(){
       <strong>${ayFmt(p.marked)}</strong> скрининг белгісі қойылды.${p.srcMonths?'':' <strong style="color:#b45309">Қызмет дерегі жоқ — «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдеріне выгрузка жүктеңіз.</strong>'}
     </div></div></div>`;
   }
+
+  // ── Пациент-деңгейлі синхрондау (мейіргерге ботта нақты тізім) ──
+  html += `<div class="card" style="border-color:#f3b4b4;background:#fffbfb">
+    <div class="card-title">👤 Мейіргерге нақты тізім беру (пациент-деңгейлі)</div>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:9px">
+      Мейіргер ботта <strong>өз учаскесінің</strong> пациенттерін аты-жөнімен, телефонымен көреді.
+      <strong style="color:#b91c1c">Бұл әрекет боттың базасына пациент дерегін жазады.</strong>
+      Мейіргер тек өз учаскесін көреді, әр қарау аудит журналына жазылады.
+      <br>Аты-жөн мен телефон «Төлем жүйесі», «Сыртқы бағыттар», «Қызмет алмағандар» бөлімдеріндегі
+      файлдардан жиналады (халық тізімінде тек инициал бар).
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:230px">
+        <label class="form-label" style="font-size:11px">Синхрондау кілті (Apps Script-тегі SCR_SYNC_KEY)</label>
+        <input type="password" class="form-input" id="scrSyncKey" value="${scrSyncKeyGet()}"
+          oninput="scrSyncKeySet(this.value)" placeholder="кездейсоқ 20+ таңба" style="font-size:12px">
+      </div>
+      <button class="icon-btn" id="scrSyncBtn" onclick="scrSyncToBot()" style="font-size:12.5px">👤 Пациент тізімін ботқа жіберу</button>
+    </div>
+    <div id="scrSyncStatus" style="font-size:12px;margin-top:8px"></div>
+  </div>`;
 
   // Серверге сақтау батырмасы (Телеграм бот осы деректі оқиды)
   html += `<div class="card" style="border-color:#c7d2fe">
