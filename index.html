@@ -619,7 +619,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.6</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.7</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -4712,6 +4712,36 @@ function scrqIsList(H){
   return /мо начавшая осмотр/.test(t) || (/дата начала/.test(t) && /завершивших скрининг/.test(t));
 }
 function scrqYes(v){ const s=String(v||'').trim().toLowerCase(); return !!s && s!=='0' && s!=='нет' && s!=='-' && s!=='—'; }
+/* ============================================================
+   ⚠️ v15.7 — СКРИНИНГ ҚАМТУЫН ТҮЗЕТУ
+   Бұрын «өткен/өтпеген» тек қызмет файлдарынан (Төлем жүйесі,
+   Сыртқы бағыттар) есептелетін. Ал серверде тек АГРЕГАТ сақталады —
+   пациент-деңгейлі жол жоқ. Сондықтан бетті жаңартқанда қамту 0% болып,
+   БҮКІЛ нысаналы топ «мерзімі жеткен» деп саналатын.
+   Енді «Скрининг ... - список» файлдарының өзінен де белгіленеді —
+   ол ДамуМед-тің скрининг өткендер туралы БІРІНШІ ДӘРЕЖЕЛІ жазбасы.
+   ============================================================ */
+const SCRQ_RULE_MAP = { rmzh:'mammo', rshm:'cerv', krr:'colo' };
+
+function scrqMarkDone(hitKey, rows, hr){
+  const ruleId = SCRQ_RULE_MAP[hitKey];
+  if (!ruleId || typeof SCR === 'undefined' || !SCR.people || !SCR.people.size) return 0;
+  let marked = 0;
+  rows.slice(hr+1).forEach(function(r){
+    const iin = String(r[3]||'').replace(/\D/g,'');
+    if (iin.length !== 12) return;
+    const rec = SCR.people.get(iin);
+    if (!rec) return;
+    // 9 = «Дата окончания» (аяқтаған). Бос болса — скрининг АЯҚТАЛМАҒАН.
+    const d = scrDate(r[9]);
+    if (!d || isNaN(d)) return;
+    if (!rec.done[ruleId] || d > rec.done[ruleId]) { rec.done[ruleId] = d; marked++; }
+    if (!SCR.minDate || d < SCR.minDate) SCR.minDate = d;
+    if (!SCR.maxDate || d > SCR.maxDate) SCR.maxDate = d;
+  });
+  return marked;
+}
+
 function scrqParse(rows, hr, H, fname){
   const hit = SCRQ_NAMES.find(x=>x.re.test(fname)) || {name:fname.slice(0,30), key:'oth_'+Object.keys(SCRQ.lists).length};
   const pm = String(fname).match(/_(\d{2})(\d{2})(\d{4})_/);
@@ -4740,7 +4770,10 @@ function scrqParse(rows, hr, H, fname){
     }
   });
   SCRQ.lists[hit.key]=o;
-  SCRQ.log.push({name:fname, ok:true, info:o.name+' · '+ayFmt(o.total)+' адам · аяқтаған '+ayFmt(o.done)});
+  const _md = scrqMarkDone(hit.key, rows, hr);
+  SCRQ.log.push({name:fname, ok:true,
+    info:o.name+' · '+ayFmt(o.total)+' адам · аяқтаған '+ayFmt(o.done)
+         + (_md ? ' · 🔗 қамтуға белгіленді: '+ayFmt(_md) : '')});
 }
 function scrqRender(){
   const ks=Object.keys(SCRQ.lists); if(!ks.length) return '';
@@ -6746,13 +6779,18 @@ function refClearFilter(){ REF.filter={}; REF.filterMonth=''; refRender(); }
 const LENS_RULES = {
   ref: {
     econ: [/қай мекемеге/i, /сыртқа кететін қызметтер/i, /айлар × мекеме/i,
-           /шектеу планы/i, /зертхана талдауы/i],
-    clin: [/жіберуші дәрігерлер/i, /не үшін жібереді/i, /тапсыру аудиті/i]
+           /шектеу планы/i, /зертхана талдауы/i, /айлар бойынша динамика/i],
+    clin: [/жіберуші дәрігерлер/i, /не үшін жібереді/i, /тапсыру аудиті/i,
+           /учаске бойынша/i],
+    // Екі линзада да көрінетіндер (басқару құралы мен қорытынды)
+    both: [/сүзгі/i, /инсайттар/i]
   },
   psy: {
     econ: [/айлық нәтиже/i, /қате типтері/i, /топ қызметтер/i,
-           /қызметкер бойынша көлем/i, /ең аз қызмет көрсеткен/i],
-    clin: [/вакцинация/i, /манту/i]
+           /қызметкер бойынша көлем/i, /ең аз қызмет көрсеткен/i,
+           /айлар бойынша динамика/i],
+    clin: [/вакцинация/i, /манту/i],
+    both: [/сүзгі/i, /инсайттар/i]
   }
 };
 const LENS_NOTE = {
@@ -6777,21 +6815,36 @@ function lensSet(sec, v){
   try { localStorage.setItem('ayan_lens_'+sec, v); } catch(e){}
   lensApply(sec);
 }
+function lensClassify(sec, title){
+  const R = LENS_RULES[sec] || {econ:[],clin:[],both:[]};
+  if ((R.both||[]).some(function(re){ return re.test(title); })) return 'both';
+  const e = R.econ.some(function(re){ return re.test(title); });
+  const c = R.clin.some(function(re){ return re.test(title); });
+  if (e && !c) return 'econ';
+  if (c && !e) return 'clin';
+  return 'both';          // танылмаған карта ЕШҚАШАН жасырылмайды
+}
 function lensApply(sec){
   const box = document.getElementById(sec + 'Report');
   if (!box) return;
-  const lens = lensGet(sec), R = LENS_RULES[sec] || {econ:[],clin:[]};
+  const lens = lensGet(sec);
+  const n = { all:0, econ:0, clin:0, both:0 };
   box.querySelectorAll('.card').forEach(function(card){
+    if (card.closest('.lens-bar')) return;
     const t = (card.querySelector('.card-title') || {}).textContent || '';
-    const isEcon = R.econ.some(function(re){ return re.test(t); });
-    const isClin = R.clin.some(function(re){ return re.test(t); });
-    let hide = false;
-    if (lens === 'econ') hide = isClin && !isEcon;
-    if (lens === 'clin') hide = isEcon && !isClin;
+    const k = lensClassify(sec, t);
+    n.all++; n[k]++;
+    const hide = (lens !== 'all') && (k !== 'both') && (k !== lens);
     card.classList.toggle('lens-hidden', hide);
   });
   box.querySelectorAll('.lens-btn').forEach(function(b){
     b.classList.toggle('on', b.dataset.lens === lens);
+    const c = b.dataset.lens === 'all' ? n.all
+            : b.dataset.lens === 'econ' ? (n.econ + n.both)
+            : (n.clin + n.both);
+    const lab = b.dataset.label || b.textContent;
+    b.dataset.label = lab.replace(/\s*\(\d+\)$/, '');
+    b.textContent = b.dataset.label + ' (' + c + ')';
   });
   const note = box.querySelector('.lens-note');
   if (note) note.textContent = (LENS_NOTE[sec] || {})[lens] || '';
