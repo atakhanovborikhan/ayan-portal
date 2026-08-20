@@ -619,7 +619,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.7</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.8</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -5882,9 +5882,16 @@ function scrBuildSyncRows(){
   const now = new Date();
   const rows = [];
   let named=0, phoned=0;
+  /* v15.8: приоритеттеу үшін қосымша өрістер.
+     Күні болмаса — скрининг ЕШҚАШАН жасалмаған (әлдеқашан асқан).
+     visits/dx_ch — «Халық профилі» бөлімі жүктелген болса ғана толады. */
+  const _scrD = d => (d instanceof Date && !isNaN(d))
+      ? d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
+      : '';
   SCR.people.forEach((p, iin)=>{
     const cells = { colo:'', mammo:'', cerv:'', flg:'' };
-    let anyDue = false, anyGroup = false;
+    const lasts = { colo:'', mammo:'', cerv:'', flg:'' };
+    let anyDue = false, anyGroup = false, dueN = 0;
     SCR_RULES.forEach(rule=>{
       const age = p.birth ? Math.floor((now - p.birth)/(365.25*864e5)) : null;
       if(age===null) return;
@@ -5893,16 +5900,28 @@ function scrBuildSyncRows(){
       anyGroup = true;
       const last = p.done ? p.done[rule.id] : null;
       const lim = new Date(now); lim.setFullYear(lim.getFullYear() - rule.years);
+      lasts[rule.id] = _scrD(last);
       if(last && last >= lim){
         cells[rule.id] = 'OK';
       } else {
-        cells[rule.id] = 'DUE'; anyDue = true;
+        cells[rule.id] = 'DUE'; anyDue = true; dueN++;
       }
     });
     if(!anyGroup || !anyDue) return;          // тек «керек» барларды жібереміз
     const d = dict.get(iin) || {};
     if(d.name) named++;
     if(d.tel) phoned++;
+    // «Халық профилі» жүктелген болса — келу жиілігі мен МКБ бөлімдері
+    let visits = '', dxch = '';
+    try{
+      if(typeof POP!=='undefined' && POP.people && POP.people.size){
+        const pp = POP.people.get(iin);
+        if(pp){
+          visits = (pp.visits||0) + (pp.ext||0);
+          if(pp.dx && pp.dx.size) dxch = [...pp.dx].sort().join('');
+        }
+      }
+    }catch(e){}
     rows.push([
       iin,
       p.uch || '—',
@@ -5910,7 +5929,9 @@ function scrBuildSyncRows(){
       d.tel || '',
       p.gender || '',
       p.birth ? p.birth.getFullYear() : '',
-      cells.colo, cells.mammo, cells.cerv, cells.flg
+      cells.colo, cells.mammo, cells.cerv, cells.flg,
+      lasts.colo, lasts.mammo, lasts.cerv, lasts.flg,
+      dueN, visits, dxch
     ]);
   });
   return { rows, stat:{ total:rows.length, named, phoned, dict:dict.size } };
