@@ -18,19 +18,21 @@
 <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.10/build/vfs_fonts.js"></script>
 <style>
   :root {
-    --bg: #f4f1ea;
-    --bg-card: #ffffff;
-    --bg-card-2: #fbf9f4;
-    --ink: #1a1d1a;
-    --ink-2: #4a4d48;
-    --ink-3: #8a8d88;
-    --accent: #2d5e3e;
-    --accent-2: #c8a951;
-    --danger: #b8392c;
-    --warn: #c87b1f;
-    --ok: #2d5e3e;
-    --line: #e3dfd5;
-    --shadow: 0 1px 2px rgba(26,29,26,.04), 0 4px 16px rgba(26,29,26,.06);
+    /* v16.0 — күңгірт тақырып. Контраст WCAG AA+ бойынша тексерілген:
+       ink/bg 14.8:1 · ink-2/bg-card 8.6:1 · ink-3/bg-card 5.2:1 */
+    --bg: #10141a;
+    --bg-card: #191f27;
+    --bg-card-2: #212934;
+    --ink: #e9ecf1;
+    --ink-2: #b6becb;
+    --ink-3: #8c96a5;
+    --accent: #5fbb8a;
+    --accent-2: #d6b863;
+    --danger: #ff7166;
+    --warn: #f2a544;
+    --ok: #5fbb8a;
+    --line: #2b3441;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.30);
     --radius: 14px;
     --radius-sm: 8px;
   }
@@ -60,8 +62,17 @@
   .login-hint { font-family: -apple-system, sans-serif; font-size: 11px; color: var(--ink-3); text-align: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 
   /* === HEADER === */
-  .topbar { position: sticky; top: 0; z-index: 100; background: rgba(244,241,234,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
-  .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  /* ===== v16.0 LAYOUT: сол жақ мәзір ===== */
+  body { display: grid; grid-template-columns: 236px minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
+  .topbar { grid-column: 1 / -1; position: sticky; top: 0; z-index: 100;
+            background: rgba(16,20,26,.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--line); }
+  @media (max-width: 900px){
+    body { grid-template-columns: minmax(0,1fr); }
+    .tabs { position: static !important; height: auto !important; max-height: 42vh; border-right: none !important;
+            border-bottom: 1px solid var(--line) !important; }
+  }
+  .topbar-inner { max-width: none; margin: 0; padding: 13px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .brand { display: flex; align-items: center; gap: 10px; }
   .brand-mark { width: 36px; height: 36px; background: var(--accent); color: #fff; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 18px; letter-spacing: -1px; }
   .brand-text strong { font-size: 15px; display: block; }
@@ -73,14 +84,27 @@
   .icon-btn.primary:hover { background: #234a31; }
 
   /* === TABS === */
-  .tabs { background: var(--bg-card); border-bottom: 1px solid var(--line); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs { grid-column: 1; grid-row: 2; background: var(--bg-card); border-right: 1px solid var(--line);
+          position: sticky; top: 62px; height: calc(100vh - 62px); overflow-y: auto;
+          -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tabs-inner { max-width: 1200px; margin: 0 auto; display: flex; padding: 0 8px; min-width: max-content; }
-  .tab { background: none; border: none; cursor: pointer; padding: 14px 14px; font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; border-bottom: 2px solid transparent; }
+  .tabs-inner { display: block; max-width: none; margin: 0; padding: 8px 8px 40px; min-width: 0; }
+  .navgrp { font-family: -apple-system, sans-serif; font-size: 9.5px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.3px; color: var(--ink-3);
+            padding: 15px 12px 6px; }
+  .navgrp:first-child { padding-top: 6px; }
+  .tab { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+         padding: 8px 12px; margin-bottom: 1px; border-radius: 8px;
+         font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 500;
+         color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+         border-left: 2px solid transparent; }
   .tab:hover { color: var(--accent); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab:hover { background: var(--bg-card-2); }
+  .tab.active { color: var(--accent); background: rgba(95,187,138,.13);
+                border-left-color: var(--accent); font-weight: 600; }
 
-  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+  main { grid-column: 2; grid-row: 2; max-width: 1180px; margin: 0; padding: 22px 26px 70px; min-width: 0; }
+  @media (max-width: 900px){ main { grid-column: 1; padding: 18px 14px 60px; } }
   .section { display: none; }
   .section.active { display: block; animation: fadeIn .3s ease; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
@@ -590,6 +614,25 @@
   @media (max-width:700px){ .lens-note { max-width:100%; text-align:left; margin:6px 0 0; } }
   .lens-hidden { display:none !important; }
 
+  /* ===== v16.0 күңгірт тақырып — соңғы жылтырату ===== */
+  input[type="file"] { color: var(--ink-2); font-family: -apple-system, sans-serif; font-size: 12.5px; }
+  input[type="file"]::file-selector-button {
+    background: var(--bg-card-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 13px; margin-right: 10px; cursor: pointer;
+    font-family: -apple-system, sans-serif; font-size: 12.5px; }
+  input[type="file"]::file-selector-button:hover { border-color: var(--accent); color: var(--accent); }
+  input, select, textarea { background: var(--bg-card-2); color: var(--ink); border-color: var(--line); }
+  input::placeholder, textarea::placeholder { color: var(--ink-3); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #333d4b; border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #414d5e; }
+  * { scrollbar-color: #333d4b var(--bg); }
+  tr:hover td { background: var(--bg-card-2); }
+  ::selection { background: rgba(95,187,138,.3); }
+  hr { border-color: var(--line); }
+  a { color: #6faaff; }
+
   .print-header { display: none; text-align: center; border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin-bottom: 20px; }
   @media print { .print-header { display: block; } }
   .print-header h1 { font-size: 22px; color: var(--accent); margin-bottom: 4px; }
@@ -609,7 +652,7 @@
       <button type="button" id="pwdEye" title="Көрсету / жасыру"
         style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;font-size:17px;line-height:1;padding:4px;opacity:.65">👁</button>
     </div>
-    <div id="pwdTip" style="font-size:11.5px;color:#64748b;margin:6px 2px 2px;min-height:16px;text-align:left"></div>
+    <div id="pwdTip" style="font-size:11.5px;color:var(--ink-3);margin:6px 2px 2px;min-height:16px;text-align:left"></div>
     <button class="login-btn" id="loginBtn">Кіру</button>
     <div class="login-hint">🔒 Тек уәкілетті қызметкерлер үшін<br>Парольді бас дәрігерден алыңыз</div>
   </div>
@@ -619,7 +662,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v15.8</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.0</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn primary" onclick="window.print()">📄 PDF</button>
@@ -630,20 +673,24 @@
 
 <nav class="tabs">
   <div class="tabs-inner">
-    <button class="tab active" data-tab="con">📜 Шарттар</button>
-    <button class="tab" data-tab="ref">📤 Сыртқы бағыттар</button>
-    <button class="tab" data-tab="psy">💳 Төлем жүйесі</button>
-    <button class="tab" data-tab="sch">🧾 Счет-реестр</button>
-    <button class="tab" data-tab="pro">📋 Протоколдар</button>
-    <button class="tab" data-tab="act">📑 Актілер</button>
-    <button class="tab" data-tab="prof">🩺 Профилактика</button>
-    <button class="tab" data-tab="scr">🔬 Скрининг</button>
-    <button class="tab" data-tab="work">📊 Жүктеме</button>
-    <button class="tab" data-tab="nosvc">🚪 Қызмет алмағандар</button>
-    <button class="tab" data-tab="att">📋 Тіркелу</button>
-    <button class="tab" data-tab="pop">👥 Халық профилі</button>
-    <button class="tab" data-tab="salary">💵 Айлық</button>
-    <button class="tab" data-tab="census">🏘️ Халық санағы</button>
+      <div class="navgrp">💰 Экономика</div>
+      <button class="tab active" data-tab="con">📜 Шарттар</button>
+      <button class="tab" data-tab="psy">💳 Төлем жүйесі</button>
+      <button class="tab" data-tab="ref">📤 Сыртқы бағыттар</button>
+      <button class="tab" data-tab="sch">🧾 Счет-реестр</button>
+      <button class="tab" data-tab="pro">📋 Протоколдар</button>
+      <button class="tab" data-tab="act">📑 Актілер</button>
+      <div class="navgrp">🚑 Клиника</div>
+      <button class="tab" data-tab="prof">🩺 Профилактика</button>
+      <button class="tab" data-tab="scr">🔬 Скрининг</button>
+      <button class="tab" data-tab="nosvc">🚪 Қызмет алмағандар</button>
+      <div class="navgrp">👥 Халық</div>
+      <button class="tab" data-tab="att">📋 Тіркелу</button>
+      <button class="tab" data-tab="pop">👥 Халық профилі</button>
+      <button class="tab" data-tab="census">🏘️ Халық санағы</button>
+      <div class="navgrp">⚙️ Басқару</div>
+      <button class="tab" data-tab="work">📊 Жүктеме</button>
+      <button class="tab" data-tab="salary">💵 Айлық</button>
   </div>
 </nav>
 
@@ -770,7 +817,7 @@
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <button class="icon-btn" onclick="salHistExport()" style="font-size:12px">📥 CSV жүктеу</button>
-        <button class="icon-btn" onclick="salHistClear()" style="font-size:12px;color:#dc2626;border-color:#f3b4b4">🗑 Барлық тарихты өшіру</button>
+        <button class="icon-btn" onclick="salHistClear()" style="font-size:12px;color:#ff7166;border-color:#703434">🗑 Барлық тарихты өшіру</button>
       </div>
       <div id="salHistBody"></div>
     </div>
@@ -1182,8 +1229,8 @@ const PWD_HINT = 'Ағылшын пернетақта · бас әріптен �
     if (ev && ev.getModifierState && ev.getModifierState('CapsLock')) m.push('⇪ Caps Lock қосулы');
     if (/^\s|\s$/.test(v)) m.push('␣ Басында/соңында бос орын бар');
     if (PWD_LEN && v.length && v.length !== PWD_LEN) m.push(v.length + '/' + PWD_LEN + ' таңба');
-    if (m.length){ tip.style.color = '#b45309'; tip.textContent = m.join(' · '); }
-    else { tip.style.color = v.length ? '#15803d' : '#64748b';
+    if (m.length){ tip.style.color = '#f2a544'; tip.textContent = m.join(' · '); }
+    else { tip.style.color = v.length ? '#57cd94' : 'var(--ink-3)';
            tip.textContent = v.length ? ('✓ ' + v.length + ' таңба — Кіру') : PWD_HINT; }
   }
   inp.addEventListener('input', check);
@@ -1273,14 +1320,14 @@ function initApp() {
     data:{
       labels: m26Periods.map(periodLabel),
       datasets:[
-        { label:'Нақты қызмет (тг)', data: m26Sum, backgroundColor:'#2d5e3e', borderRadius:6 },
-        { label:'Аванс ұстау (12.53 млн)', data: m26Periods.map(()=>12532245), type:'line', borderColor:'#c8a951', borderWidth:2.5, pointRadius:3, backgroundColor:'transparent' }
+        { label:'Нақты қызмет (тг)', data: m26Sum, backgroundColor:'var(--accent)', borderRadius:6 },
+        { label:'Аванс ұстау (12.53 млн)', data: m26Periods.map(()=>12532245), type:'line', borderColor:'var(--accent-2)', borderWidth:2.5, pointRadius:3, backgroundColor:'transparent' }
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtNum(c.parsed.y)+' тг'}}},
-      scales:{ y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'#e3dfd5'}}, x:{grid:{display:false}}}
+      scales:{ y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'var(--line)'}}, x:{grid:{display:false}}}
     }
   });
 
@@ -1293,10 +1340,10 @@ function initApp() {
       labels:['Қаңтар','Ақпан','Наурыз','Сәуір'],
       datasets:[
         { label:'2025', data: m25Sum, borderColor:'#8a8d88', backgroundColor:'rgba(138,141,136,.1)', tension:.3, fill:true, borderWidth:2 },
-        { label:'2026', data: m26Sum, borderColor:'#2d5e3e', backgroundColor:'rgba(45,94,62,.1)', tension:.3, fill:true, borderWidth:2.5 }
+        { label:'2026', data: m26Sum, borderColor:'var(--accent)', backgroundColor:'rgba(45,94,62,.1)', tension:.3, fill:true, borderWidth:2.5 }
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtNum(c.parsed.y)+' тг'}}}, scales:{ y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'#e3dfd5'}}, x:{grid:{display:false}}}}
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtNum(c.parsed.y)+' тг'}}}, scales:{ y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'var(--line)'}}, x:{grid:{display:false}}}}
   });
 
   // === АВАНС ГРАФИГІ ===
@@ -1309,14 +1356,14 @@ function initApp() {
       data:{
         labels: DATA.advance_2026.months_kz,
         datasets:[
-          { label:'Аванс ұстау жоспары', data: advance12, backgroundColor:'#c8a951', borderRadius:6 },
-          { label:'Нақты қызмет', data: [...actual4, null,null,null,null,null,null,null,null], backgroundColor:'#2d5e3e', borderRadius:6 }
+          { label:'Аванс ұстау жоспары', data: advance12, backgroundColor:'var(--accent-2)', borderRadius:6 },
+          { label:'Нақты қызмет', data: [...actual4, null,null,null,null,null,null,null,null], backgroundColor:'var(--accent)', borderRadius:6 }
         ]
       },
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y!==null?c.parsed.y.toFixed(2)+' млн':'')}}},
-        scales:{ y:{grid:{color:'#e3dfd5'}, ticks:{callback:v=>v.toFixed(0)+' млн'}}, x:{grid:{display:false}}}
+        scales:{ y:{grid:{color:'var(--line)'}, ticks:{callback:v=>v.toFixed(0)+' млн'}}, x:{grid:{display:false}}}
       }
     });
   }
@@ -1438,14 +1485,14 @@ function initApp() {
     data:{
       labels: uchKeys.map(k=>k+'-уч.'),
       datasets:[
-        { label:'Нақты қызмет (млн)', data: uchSum, backgroundColor:'#2d5e3e', borderRadius:6 },
+        { label:'Нақты қызмет (млн)', data: uchSum, backgroundColor:'var(--accent)', borderRadius:6 },
         { label:'КПН жоспары 4 ай (млн)', data: uchKpn, backgroundColor:'rgba(200,169,81,.4)', borderRadius:6 }
       ]
     },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(2)+' млн'}}},
-      scales:{ y:{grid:{color:'#e3dfd5'}, ticks:{callback:v=>v.toFixed(1)+' млн'}}, x:{grid:{display:false}}}
+      scales:{ y:{grid:{color:'var(--line)'}, ticks:{callback:v=>v.toFixed(1)+' млн'}}, x:{grid:{display:false}}}
     }
   });
 
@@ -1461,14 +1508,14 @@ function initApp() {
       data:{
         labels: adv25.months_kz,
         datasets:[
-          { label:'ТМККК аванс', data: adv25.gobmp_monthly.map(v=>v/1e6), backgroundColor:'#2d5e3e', borderRadius:6, stack:'a' },
-          { label:'МӘМС аванс', data: adv25.osms_monthly.map(v=>v/1e6), backgroundColor:'#c8a951', borderRadius:6, stack:'a' }
+          { label:'ТМККК аванс', data: adv25.gobmp_monthly.map(v=>v/1e6), backgroundColor:'var(--accent)', borderRadius:6, stack:'a' },
+          { label:'МӘМС аванс', data: adv25.osms_monthly.map(v=>v/1e6), backgroundColor:'var(--accent-2)', borderRadius:6, stack:'a' }
         ]
       },
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{position:'bottom', labels:{boxWidth:14, font:{size:11}}}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(2)+' млн'}}},
-        scales:{ y:{stacked:true, grid:{color:'#e3dfd5'}, ticks:{callback:v=>v.toFixed(1)+' млн'}}, x:{stacked:true, grid:{display:false}}}
+        scales:{ y:{stacked:true, grid:{color:'var(--line)'}, ticks:{callback:v=>v.toFixed(1)+' млн'}}, x:{stacked:true, grid:{display:false}}}
       }
     });
   }
@@ -1582,12 +1629,12 @@ function renderUch(k) {
       type:'bar',
       data:{
         labels: u.monthly.map(m=>periodLabel(m._period)),
-        datasets:[{ label:'Сома (тг)', data: u.monthly.map(m=>m.sum), backgroundColor:'#2d5e3e', borderRadius:6 }]
+        datasets:[{ label:'Сома (тг)', data: u.monthly.map(m=>m.sum), backgroundColor:'var(--accent)', borderRadius:6 }]
       },
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtNum(c.parsed.y)+' тг'}}},
-        scales:{y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'#e3dfd5'}}, x:{grid:{display:false}}}
+        scales:{y:{ticks:{callback:v=>fmtMln(v)}, grid:{color:'var(--line)'}}, x:{grid:{display:false}}}
       }
     });
   }
@@ -1631,7 +1678,7 @@ function renderWeeklyMonitor() {
   // Барлық учаскелердің графигі
   const ctxAll = document.getElementById('chartWeeklyAll');
   if (ctxAll) {
-    const colors = ['#2d5e3e','#c8a951','#b8392c','#c87b1f','#5a8a5a','#8a5a8a','#5a8a8a'];
+    const colors = ['var(--accent)','var(--accent-2)','var(--danger)','var(--warn)','#5a8a5a','#8a5a8a','#5a8a8a'];
     const datasets = uchKeys.map((k, i) => {
       const data = lastWeeks.map(w => {
         const wk = DATA.uch[k].weekly.find(x => `${x.year}-${x.week}` === w);
@@ -1654,7 +1701,7 @@ function renderWeeklyMonitor() {
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{position:'bottom', labels:{boxWidth:12, font:{size:10}}} },
-        scales:{ y:{grid:{color:'#e3dfd5'}, title:{display:true, text:'Қызмет саны', font:{size:10}}}, x:{grid:{display:false}}}
+        scales:{ y:{grid:{color:'var(--line)'}, title:{display:true, text:'Қызмет саны', font:{size:10}}}, x:{grid:{display:false}}}
       }
     });
   }
@@ -1706,7 +1753,7 @@ function renderWeeklyMonitor() {
         labels: w.map(x => x.week),
         datasets:[{
           data: w.map(x => x.records),
-          borderColor:'#2d5e3e',
+          borderColor:'var(--accent)',
           backgroundColor:'rgba(45,94,62,.15)',
           tension:.3, fill:true, borderWidth:1.5, pointRadius:2,
         }]
@@ -2200,7 +2247,7 @@ function exportSalaryPDF() {
   const itemsRows = d.items.map(it => [
     { text: it.label + '\n', style: 'cellLabel', stack: [
       { text: it.label, fontSize: 10 },
-      { text: it.desc, fontSize: 8, color: '#888', italics: true }
+      { text: it.desc, fontSize: 8, color: 'var(--ink-3)', italics: true }
     ]},
     { text: fmtNum(it.value) + ' тг', style: 'cellNum', alignment: 'right' }
   ]);
@@ -2233,8 +2280,8 @@ function exportSalaryPDF() {
           body: [
             ...itemsRows,
             [
-              { text: 'БРУТТО (барлық есептелді)', bold: true, fillColor: '#f0f5ec' },
-              { text: fmtNum(d.gross) + ' тг', bold: true, alignment: 'right', fillColor: '#f0f5ec' }
+              { text: 'БРУТТО (барлық есептелді)', bold: true, fillColor: '#17251c' },
+              { text: fmtNum(d.gross) + ' тг', bold: true, alignment: 'right', fillColor: '#17251c' }
             ],
           ],
         },
@@ -2252,26 +2299,26 @@ function exportSalaryPDF() {
           body: [
             [
               { text: 'ОПВ — Зейнетақы аударымы (10%)' },
-              { text: '−' + fmtNum(d.tax.opv) + ' тг', alignment: 'right', color: '#b8392c' }
+              { text: '−' + fmtNum(d.tax.opv) + ' тг', alignment: 'right', color: 'var(--danger)' }
             ],
             [
               { text: 'ВОСМС — МӘМС жарнасы (2%)' },
-              { text: '−' + fmtNum(d.tax.vosms) + ' тг', alignment: 'right', color: '#b8392c' }
+              { text: '−' + fmtNum(d.tax.vosms) + ' тг', alignment: 'right', color: 'var(--danger)' }
             ],
             [
               { stack: [
                 { text: 'ИПН — Жеке табыс салығы (10%)' },
-                { text: 'База: ' + fmtNum(d.tax.ipnBase) + ' тг (брутто − ОПВ − ВОСМС − 30 МРП)', fontSize: 8, color: '#888', italics: true }
+                { text: 'База: ' + fmtNum(d.tax.ipnBase) + ' тг (брутто − ОПВ − ВОСМС − 30 МРП)', fontSize: 8, color: 'var(--ink-3)', italics: true }
               ]},
-              { text: '−' + fmtNum(d.tax.ipn) + ' тг', alignment: 'right', color: '#b8392c' }
+              { text: '−' + fmtNum(d.tax.ipn) + ' тг', alignment: 'right', color: 'var(--danger)' }
             ],
             [
-              { text: 'Стандартты шегерім (30 МРП = 129 750 тг)', italics: true, color: '#666' },
-              { text: fmtNum(d.tax.stdVychet) + ' тг', alignment: 'right', italics: true, color: '#666' }
+              { text: 'Стандартты шегерім (30 МРП = 129 750 тг)', italics: true, color: 'var(--ink-3)' },
+              { text: fmtNum(d.tax.stdVychet) + ' тг', alignment: 'right', italics: true, color: 'var(--ink-3)' }
             ],
             [
               { text: 'Барлық ұстау', bold: true, fillColor: '#fdf0ee' },
-              { text: '−' + fmtNum(d.tax.totalEmployee) + ' тг', bold: true, alignment: 'right', color: '#b8392c', fillColor: '#fdf0ee' }
+              { text: '−' + fmtNum(d.tax.totalEmployee) + ' тг', bold: true, alignment: 'right', color: 'var(--danger)', fillColor: '#fdf0ee' }
             ],
           ],
         },
@@ -2292,8 +2339,8 @@ function exportSalaryPDF() {
               fillColor: '#e8f0e2',
               stack: [
                 { text: '💰 ҚОЛҒА АЛАТЫН ТАЗА СОМА', alignment: 'center', fontSize: 10, color: '#4a4d48', margin: [0, 6, 0, 4] },
-                { text: fmtNum(d.tax.net) + ' тг', alignment: 'center', fontSize: 28, bold: true, color: '#2d5e3e' },
-                { text: 'Жалпы ұстау: ' + (d.tax.totalEmployee/d.gross*100).toFixed(1) + '% брутто-дан', alignment: 'center', fontSize: 9, color: '#666', margin: [0, 4, 0, 6] }
+                { text: fmtNum(d.tax.net) + ' тг', alignment: 'center', fontSize: 28, bold: true, color: 'var(--accent)' },
+                { text: 'Жалпы ұстау: ' + (d.tax.totalEmployee/d.gross*100).toFixed(1) + '% брутто-дан', alignment: 'center', fontSize: 9, color: 'var(--ink-3)', margin: [0, 4, 0, 6] }
               ]
             }
           ]],
@@ -2306,17 +2353,17 @@ function exportSalaryPDF() {
         table: {
           widths: ['*', 110],
           body: [
-            [{ text: 'ООСМС — МӘМС аударымы (3%)' }, { text: '+' + fmtNum(d.tax.oosms) + ' тг', alignment: 'right', color: '#2d5e3e' }],
-            [{ text: 'СО — Әлеуметтік аударымдар (5%)' }, { text: '+' + fmtNum(d.tax.so) + ' тг', alignment: 'right', color: '#2d5e3e' }],
-            [{ text: 'СН — Әлеуметтік салық (6% − СО)' }, { text: '+' + fmtNum(d.tax.snToPay) + ' тг', alignment: 'right', color: '#2d5e3e' }],
-            [{ text: 'ОПВР — Жұмыс беруші зейнетақы (3.5%)' }, { text: '+' + fmtNum(d.tax.opvr) + ' тг', alignment: 'right', color: '#2d5e3e' }],
+            [{ text: 'ООСМС — МӘМС аударымы (3%)' }, { text: '+' + fmtNum(d.tax.oosms) + ' тг', alignment: 'right', color: 'var(--accent)' }],
+            [{ text: 'СО — Әлеуметтік аударымдар (5%)' }, { text: '+' + fmtNum(d.tax.so) + ' тг', alignment: 'right', color: 'var(--accent)' }],
+            [{ text: 'СН — Әлеуметтік салық (6% − СО)' }, { text: '+' + fmtNum(d.tax.snToPay) + ' тг', alignment: 'right', color: 'var(--accent)' }],
+            [{ text: 'ОПВР — Жұмыс беруші зейнетақы (3.5%)' }, { text: '+' + fmtNum(d.tax.opvr) + ' тг', alignment: 'right', color: 'var(--accent)' }],
             [
-              { text: 'Жұмыс беруші қосымша', bold: true, fillColor: '#f0f5ec' },
-              { text: '+' + fmtNum(d.tax.totalEmployer) + ' тг', bold: true, alignment: 'right', color: '#2d5e3e', fillColor: '#f0f5ec' }
+              { text: 'Жұмыс беруші қосымша', bold: true, fillColor: '#17251c' },
+              { text: '+' + fmtNum(d.tax.totalEmployer) + ' тг', bold: true, alignment: 'right', color: 'var(--accent)', fillColor: '#17251c' }
             ],
             [
               { text: '💼 ҚОР ЖАЛПЫ ШЫҒЫНЫ', bold: true, fillColor: '#e8f0e2', fontSize: 11 },
-              { text: fmtNum(d.tax.fundTotal) + ' тг', bold: true, alignment: 'right', color: '#2d5e3e', fillColor: '#e8f0e2', fontSize: 13 }
+              { text: fmtNum(d.tax.fundTotal) + ' тг', bold: true, alignment: 'right', color: 'var(--accent)', fillColor: '#e8f0e2', fontSize: 13 }
             ],
           ],
         },
@@ -2335,7 +2382,7 @@ function exportSalaryPDF() {
           body: [[{
             fillColor: '#fbf9f4',
             stack: [
-              { text: 'Заңнамалық негіздер (2026 ж):', bold: true, fontSize: 9, color: '#2d5e3e', margin: [0, 4, 0, 4] },
+              { text: 'Заңнамалық негіздер (2026 ж):', bold: true, fontSize: 9, color: 'var(--accent)', margin: [0, 4, 0, 4] },
               { text: '• ҚР Үкіметінің №1193 қаулысы (31.12.2015, өзг. №70 — 03.02.2026)', fontSize: 8 },
               { text: '• №1002 қаулысы (15.11.2023) — мед. түзету коэф (3.42 / 2.34)', fontSize: 8 },
               { text: '• ҚР Салық кодексі (01.01.2026 ж жаңа редакция)', fontSize: 8 },
@@ -2348,13 +2395,13 @@ function exportSalaryPDF() {
       },
 
       // Ескерту
-      { text: '\nБұл есеп ДО + барлық қосымшалар + СКПН негізінде есептелген. Нақты айлық тарификациялық комиссия шешімі бойынша түзетілуі мүмкін.', fontSize: 8, italics: true, color: '#888', alignment: 'center', margin: [0, 12, 0, 0] },
-      { text: '«Аян» ЕСО · Конфиденциалды құжат', fontSize: 8, color: '#888', alignment: 'center', margin: [0, 4, 0, 0] },
+      { text: '\nБұл есеп ДО + барлық қосымшалар + СКПН негізінде есептелген. Нақты айлық тарификациялық комиссия шешімі бойынша түзетілуі мүмкін.', fontSize: 8, italics: true, color: 'var(--ink-3)', alignment: 'center', margin: [0, 12, 0, 0] },
+      { text: '«Аян» ЕСО · Конфиденциалды құжат', fontSize: 8, color: 'var(--ink-3)', alignment: 'center', margin: [0, 4, 0, 0] },
     ],
     styles: {
-      header: { fontSize: 16, bold: true, color: '#2d5e3e', margin: [0, 0, 0, 4] },
+      header: { fontSize: 16, bold: true, color: 'var(--accent)', margin: [0, 0, 0, 4] },
       meta: { fontSize: 10, color: '#4a4d48' },
-      sectionTitle: { fontSize: 12, bold: true, color: '#2d5e3e', margin: [0, 8, 0, 6] },
+      sectionTitle: { fontSize: 12, bold: true, color: 'var(--accent)', margin: [0, 8, 0, 6] },
       cellLabel: { fontSize: 10 },
       cellNum: { fontSize: 10 },
     },
@@ -2377,8 +2424,8 @@ let censusData = { houses: [], patients: [], visits: [] };
 
 // Учаске түстері (картадағы маркерлер үшін)
 const UCH_COLORS = {
-  1: '#2d5e3e', // жасыл
-  2: '#3b82f6', // көк
+  1: 'var(--accent)', // жасыл
+  2: '#6faaff', // көк
   3: '#eab308', // сары
   4: '#ef4444', // қызыл
   5: '#a855f7', // күлгін
@@ -2637,7 +2684,7 @@ function renderCensusMap() {
     const lng = parseFloat(h.longitude);
     if (isNaN(lat) || isNaN(lng)) return;
     
-    const color = UCH_COLORS[h.uchastok] || '#666';
+    const color = UCH_COLORS[h.uchastok] || 'var(--ink-3)';
     
     // Үйдегі пациенттер
     const housePatients = censusData.patients.filter(p => p.house_id == h.id);
@@ -2653,7 +2700,7 @@ function renderCensusMap() {
     
     let popup = `<div style="font-family:Georgia,serif; min-width:200px;">`;
     popup += `<div style="font-weight:bold; color:${color}; margin-bottom:4px;">🏠 ${h.street}, ${h.house_number}${h.apartment ? ', пәт.' + h.apartment : ''}</div>`;
-    popup += `<div style="font-size:12px; color:#666; font-family:-apple-system,sans-serif;">${h.uchastok}-учаске · ${h.family_count || 1} жанұя</div>`;
+    popup += `<div style="font-size:12px; color:var(--ink-3); font-family:-apple-system,sans-serif;">${h.uchastok}-учаске · ${h.family_count || 1} жанұя</div>`;
     
     if (housePatients.length > 0) {
       popup += `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #eee; font-size:12px; font-family:-apple-system,sans-serif;">`;
@@ -2670,7 +2717,7 @@ function renderCensusMap() {
     }
     
     if (h.notes) {
-      popup += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #eee; font-size:11px; color:#888; font-family:-apple-system,sans-serif;">📝 ${h.notes}</div>`;
+      popup += `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #eee; font-size:11px; color:var(--ink-3); font-family:-apple-system,sans-serif;">📝 ${h.notes}</div>`;
     }
     
     popup += `</div>`;
@@ -3774,7 +3821,7 @@ function cmpPct(a,b){ return (a===null||a===undefined||!b) ? '—' : (100*a/b).t
 function cmpMoney(n){ return n===null||n===undefined||isNaN(n) ? '—' : (Math.abs(n)>=1e6 ? (n/1e6).toFixed(2)+' млн' : ayFmt(n)); }
 function cmpMonKey(p){ return p ? p.y+'-'+String(p.m).padStart(2,'0') : '?'; }
 function cmpMonLabel(k){ const m=+k.slice(5); return AY_MONTH_KZ[m].slice(0,4)+' '+k.slice(0,4); }
-const CMP_PALETTE = ['#2563eb','#16a34a','#f59e0b','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#0d9488','#9333ea','#475569'];
+const CMP_PALETTE = ['#6faaff','#57cd94','#f59e0b','#ff7166','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#0d9488','#9333ea','var(--ink-2)'];
 
 let CMP_CHARTS = {}; // бөлім → [Chart]
 function cmpClearCharts(sec){ (CMP_CHARTS[sec]||[]).forEach(c=>{try{c.destroy();}catch(e){}}); CMP_CHARTS[sec]=[]; }
@@ -3875,14 +3922,14 @@ function cmpTopTable(map, opts){
   let h = `<div style="overflow-x:auto"><table><tr><th>${opts.label||'Атауы'}</th><th>Саны</th><th>%</th>${opts.showSum!==false?'<th>Сома, тг</th>':''}</tr>`;
   arr.slice(0,lim).forEach(([k,v])=> h += `<tr><td>${String(k).slice(0,70)}</td><td><strong>${ayFmt(v.n)}</strong></td><td>${cmpPct(v.n,totN)}</td>${opts.showSum!==false?'<td>'+ayFmt(v.sum||0)+'</td>':''}</tr>`);
   if (arr.length>lim) h += `<tr><td colspan="4" style="color:var(--ink-2)">… тағы ${arr.length-lim}</td></tr>`;
-  h += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td><strong>${ayFmt(totN)}</strong></td><td>100%</td>${opts.showSum!==false?'<td><strong>'+ayFmt(totS)+'</strong></td>':''}</tr></table></div>`;
+  h += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td><td><strong>${ayFmt(totN)}</strong></td><td>100%</td>${opts.showSum!==false?'<td><strong>'+ayFmt(totS)+'</strong></td>':''}</tr></table></div>`;
   return h;
 }
 
 /* Файл күйі панелі */
 function cmpStatusPanel(log, mismatchNote){
   let h = `<div class="card"><div class="card-title">📋 Жүктелген файлдар</div><div style="overflow-x:auto"><table><tr><th>Файл</th><th>Нәтиже</th></tr>`;
-  log.forEach(l => h += `<tr><td style="font-size:11px">${l.name}</td><td style="color:${l.ok?'#15803d':'#dc2626'}">${l.ok?'✅ ':'❌ '}${l.info}</td></tr>`);
+  log.forEach(l => h += `<tr><td style="font-size:11px">${l.name}</td><td style="color:${l.ok?'#57cd94':'#ff7166'}">${l.ok?'✅ ':'❌ '}${l.info}</td></tr>`);
   h += `</table></div>${mismatchNote||''}</div>`;
   return h;
 }
@@ -4092,7 +4139,7 @@ function _flashSaveSummary(sec){
 function storeFlash(sec, msg, isErr){
   const el = document.getElementById(sec+'StoreFlash');
   if (!el) return;
-  el.innerHTML = `<span style="color:${isErr?'#dc2626':'#15803d'};font-size:12px">${msg}</span>`;
+  el.innerHTML = `<span style="color:${isErr?'#ff7166':'#57cd94'};font-size:12px">${msg}</span>`;
   setTimeout(()=>{ if(el) el.innerHTML=''; }, 12000);
 }
 
@@ -4115,7 +4162,7 @@ function storeManage(sec){
     const p=_normPeriod(r.period)||String(r.period||'');
     const by=r.uploaded_by||r.uploaded_at||'';
     html += `<tr><td><strong>${p}</strong></td><td style="color:var(--ink-2);font-size:11.5px">${String(by).slice(0,24)}</td>
-      <td><button class="icon-btn" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#f3b4b4"
+      <td><button class="icon-btn" style="font-size:11px;padding:2px 8px;color:#ff7166;border-color:#703434"
         onclick="storeDeletePeriod('${sec}','${p}')">✖ өшіру</button></td></tr>`;
   });
   html += '</table></div>';
@@ -4128,7 +4175,7 @@ function storeManage(sec){
   modal.innerHTML = `<div style="background:var(--bg-card);border-radius:12px;padding:18px 20px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.2)">
     <div style="font-weight:700;font-size:15px;margin-bottom:4px">🗂 «${cfg.label}» — серверде сақталған кезеңдер</div>
     <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Барлығы <strong>${rows.length}</strong> кезең. Өшіру серверден біржола жояды.<br>
-      <span style="color:#b45309">Ескерту: сол кезеңді қайта жүктесеңіз, ол өзі алмастырылады — өшірудің қажеті жоқ.</span></div>
+      <span style="color:#f2a544">Ескерту: сол кезеңді қайта жүктесеңіз, ол өзі алмастырылады — өшірудің қажеті жоқ.</span></div>
     ${html}
     <div style="text-align:right;margin-top:12px">
       <button class="icon-btn" onclick="document.getElementById('storeMgrModal').remove()">Жабу</button>
@@ -4151,27 +4198,40 @@ async function storeDeletePeriod(sec, period){
   }
 }
 
+/* v16.0 — сервер БАТЫРМАСЫЗ. Дерек бет ашылғанда автоматты жүктеледі
+   (storeInitAll), файл жүктелгенде автоматты сақталады. Мұнда тек КҮЙ жолағы.
+   Баптау мен кезеңдерді басқару ⚙️ белгішесінің астына жиналды. */
 function storePanel(sec){
   const cfg = STORE_SECTIONS[sec];
-  const on = storeConfigured();
-  // Осы бөлім үшін серверде қанша ай сақталған
-  let serverInfo = '';
-  if (on && cfg && SERVER_DATA && Array.isArray(SERVER_DATA[cfg.server])){
-    const n = SERVER_DATA[cfg.server].length;
-    serverInfo = ` · серверде <strong>${n}</strong> ай сақталған`;
-  } else if (on && (!SERVER_DATA)){
-    serverInfo = ` · <span style="color:#b45309">дерек әлі жүктелмеді (🔄 Жаңарту бас)</span>`;
+  const on  = storeConfigured();
+  if (!on){
+    return `<div class="card" style="border-color:#6d5522;padding:11px 14px">
+      <span style="font-size:12.5px">⚙️ <strong>Сервер бапталмаған</strong> — соңғы деректер автоматты көрінбейді.</span>
+      <button class="icon-btn" onclick="storeOpenConfig()" style="font-size:11.5px;margin-left:10px">Қосылу</button>
+    </div>`;
   }
-  return `<div class="card" style="border-color:${on?'#bbf7d0':'#fde68a'}">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div style="font-size:13px">${on?'☁️ <strong>Серверлі салыстыру қосулы</strong>'+serverInfo:'⚙️ <strong>Сервер бапталмаған</strong> — деректі сақтау үшін баптау керек'}</div>
-      <div>
-        <span id="${sec}StoreFlash"></span>
-        <button class="icon-btn" onclick="storeOpenConfig()" style="font-size:12px">${on?'⚙️ Баптау':'🔌 Серверге қосылу'}</button>
-        ${on?`<button class="icon-btn" onclick="storeRefresh('${sec}')" style="font-size:12px">🔄 Жаңарту</button>`:''}
-        ${on?`<button class="icon-btn" onclick="storeManage('${sec}')" style="font-size:12px">🗂 Кезеңдер</button>`:''}
-      </div>
-    </div>
+  let n = null;
+  if (cfg && SERVER_DATA && Array.isArray(SERVER_DATA[cfg.server])) n = SERVER_DATA[cfg.server].length;
+
+  let state, tone;
+  if (SERVER_DATA === null){ state = '⏳ Сервермен байланысуда…'; tone = 'var(--ink-3)'; }
+  else if (n === null || n === 0){ state = 'Серверде бұл бөлім бойынша жазба жоқ'; tone = 'var(--warn)'; }
+  else { state = `Соңғы деректер жүктелді · <strong>${n}</strong> кезең`; tone = 'var(--ok)'; }
+
+  return `<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+                      font-family:-apple-system,sans-serif;font-size:11.5px;color:var(--ink-3);
+                      padding:2px 2px 12px">
+    <span style="width:7px;height:7px;border-radius:50%;background:${tone};flex:none"></span>
+    <span style="color:${tone}">${state}</span>
+    <span id="${sec}StoreFlash"></span>
+    <span style="margin-left:auto;display:flex;gap:5px">
+      <button class="icon-btn" title="Сервер баптауы" onclick="storeOpenConfig()"
+              style="font-size:11px;padding:3px 8px">⚙️</button>
+      <button class="icon-btn" title="Қайта жүктеу" onclick="storeRefresh('${sec}')"
+              style="font-size:11px;padding:3px 8px">🔄</button>
+      <button class="icon-btn" title="Сақталған кезеңдер" onclick="storeManage('${sec}')"
+              style="font-size:11px;padding:3px 8px">🗂</button>
+    </span>
   </div>`;
 }
 
@@ -4199,7 +4259,7 @@ function storeOpenConfig(){
   const div = document.createElement('div');
   div.id='storeConfigModal';
   div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
-  div.innerHTML = `<div style="background:#fff;border-radius:14px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow:auto">
+  div.innerHTML = `<div style="background:var(--bg-card);border-radius:14px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow:auto">
     <h2 style="margin:0 0 4px;font-size:18px">☁️ Серверлі сақтауды баптау</h2>
     <p style="font-size:13px;color:#6b7280;margin:0 0 16px">Тек агрегаттар (сома, %, қызмет саны) сақталады. Пациент ИИН-і, аты-жөні, диагнозы ЕШҚАШАН жіберілмейді.</p>
     <label style="font-size:13px;font-weight:600">Apps Script Web App URL (/exec):</label>
@@ -4228,9 +4288,9 @@ async function storeTestConfig(){
   try {
     const res=await _fetchTimeout(url+'?token='+encodeURIComponent(token)+'&action=ping', {}, 10000);
     const j=await res.json();
-    st.innerHTML = j.ok ? '<span style="color:#15803d">✅ Қосылым сәтті! Парақтар: '+(j.sheets||[]).join(', ')+'</span>'
-                        : '<span style="color:#dc2626">❌ '+(j.error||'қате')+'</span>';
-  } catch(e){ st.innerHTML='<span style="color:#dc2626">❌ Қосылым жоқ: '+e.message+'</span>'; }
+    st.innerHTML = j.ok ? '<span style="color:#57cd94">✅ Қосылым сәтті! Парақтар: '+(j.sheets||[]).join(', ')+'</span>'
+                        : '<span style="color:#ff7166">❌ '+(j.error||'қате')+'</span>';
+  } catch(e){ st.innerHTML='<span style="color:#ff7166">❌ Қосылым жоқ: '+e.message+'</span>'; }
 }
 async function storeSaveConfig(){
   STORE.apiUrl=document.getElementById('cfgUrl').value.trim();
@@ -4244,16 +4304,16 @@ async function storeSaveConfig(){
   } catch(e){ saved=false; }
   const st=document.getElementById('cfgStatus');
   if (!saved && st){
-    st.innerHTML='<span style="color:#dc2626">⚠️ Браузер баптауды сақтай алмады (localStorage өшірулі болуы мүмкін). Бұл «private/incognito» режимде немесе file:// ашқанда болады. Қосылым осы сессияда жұмыс істейді, бірақ бетті жапсаң қайта енгізу керек.</span>';
+    st.innerHTML='<span style="color:#ff7166">⚠️ Браузер баптауды сақтай алмады (localStorage өшірулі болуы мүмкін). Бұл «private/incognito» режимде немесе file:// ашқанда болады. Қосылым осы сессияда жұмыс істейді, бірақ бетті жапсаң қайта енгізу керек.</span>';
   }
   // Серверден деректі тарт + барлық бөлімді жаңарт
   if (st) st.innerHTML += '<div style="margin-top:6px">⏳ Сервер дерегі жүктелуде...</div>';
   try {
     await storeInitAll();
-    if (st) st.innerHTML = '<span style="color:#15803d">✅ Қосылды әрі дерек жүктелді ('+_countServerRows()+' жазба). Терезені жабуға болады.</span>';
+    if (st) st.innerHTML = '<span style="color:#57cd94">✅ Қосылды әрі дерек жүктелді ('+_countServerRows()+' жазба). Терезені жабуға болады.</span>';
     setTimeout(()=>{ const m=document.getElementById('storeConfigModal'); if(m) m.style.display='none'; }, 1500);
   } catch(e){
-    if (st) st.innerHTML = '<span style="color:#dc2626">❌ Дерек жүктелмеді: '+e.message+'</span>';
+    if (st) st.innerHTML = '<span style="color:#ff7166">❌ Дерек жүктелмеді: '+e.message+'</span>';
   }
 }
 function _countServerRows(){
@@ -4274,7 +4334,7 @@ function trendPanel(sec, series, metricLabel, unit){
   const an = detectAnomalies(sorted);
   if (!f) return '';
   const dir = f.slope>0?'өсу ↗':'түсу ↘';
-  const dirColor = f.slope>0?'#15803d':'#dc2626';
+  const dirColor = f.slope>0?'#57cd94':'#ff7166';
   const nextLabel = _nextPeriod(sorted[sorted.length-1].period);
   let h = `<div class="card"><div class="card-title">📈 Тренд талдауы — ${metricLabel}</div>
     <div class="kpi-grid">
@@ -4534,16 +4594,16 @@ function dregRender(){
   const ok=act.filter(p=>tot(p)>=3);
   const pct=n=>cmpPct(n,T);
 
-  let h=`<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Д-есеп пациенттері — қызмет талдауы</div>`;
+  let h=`<div class="card" style="border-color:#3a4672"><div class="card-title">🩺 Д-есеп пациенттері — қызмет талдауы</div>`;
   h+=`<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">
     Дереккөз: «Список пациентов, состоящих/снятых на учете». Қызмет тарихы «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдерінен алынды
     (${DREG.srcMonths} ай, ${ayFmt(DREG.scanned)} жазба қаралды).</div>`;
 
   h+=`<div class="kpi-grid">
     <div class="kpi"><div class="kpi-label">Д-есепте (белсенді)</div><div class="kpi-value">${ayFmt(T)}</div><div class="kpi-extra">толық шығарылған: ${ayFmt(A.length-T)} · диагноз: ${ayFmt(act.reduce((a,p)=>a+(p.regs||[]).filter(r=>!r.off).length,0))}</div></div>
-    <div class="kpi ${svcOn&&never.length?'warn':''}"><div class="kpi-label">Бірде-бір қызмет алмаған</div><div class="kpi-value" style="color:${never.length?'#dc2626':'inherit'}">${svcOn?ayFmt(never.length):'—'}</div><div class="kpi-extra">${svcOn?pct(never.length):'қызмет дерегі жоқ'}</div></div>
+    <div class="kpi ${svcOn&&never.length?'warn':''}"><div class="kpi-label">Бірде-бір қызмет алмаған</div><div class="kpi-value" style="color:${never.length?'#ff7166':'inherit'}">${svcOn?ayFmt(never.length):'—'}</div><div class="kpi-extra">${svcOn?pct(never.length):'қызмет дерегі жоқ'}</div></div>
     <div class="kpi"><div class="kpi-label">Сирек (1–2 рет)</div><div class="kpi-value">${svcOn?ayFmt(rare.length):'—'}</div><div class="kpi-extra">${svcOn?pct(rare.length):''}</div></div>
-    <div class="kpi"><div class="kpi-label">Тұрақты (3+)</div><div class="kpi-value" style="color:#16a34a">${svcOn?ayFmt(ok.length):'—'}</div><div class="kpi-extra">${svcOn?pct(ok.length):''}</div></div>
+    <div class="kpi"><div class="kpi-label">Тұрақты (3+)</div><div class="kpi-value" style="color:#57cd94">${svcOn?ayFmt(ok.length):'—'}</div><div class="kpi-extra">${svcOn?pct(ok.length):''}</div></div>
   </div>`;
 
   if(!svcOn){
@@ -4556,10 +4616,10 @@ function dregRender(){
   // Клиникалық сөйлем
   if(never.length){
     const topU=Object.entries(never.reduce((o,p)=>{o[p.uch]=(o[p.uch]||0)+1;return o;},{})).sort((a,b)=>b[1]-a[1]).slice(0,3);
-    h+=`<div style="padding:11px;border-radius:9px;margin-top:10px;background:#fef2f2;border:1px solid #f3b4b4">
+    h+=`<div style="padding:11px;border-radius:9px;margin-top:10px;background:#2b1818;border:1px solid #703434">
       <div style="font-weight:700;font-size:13px;margin-bottom:5px">🔴 Д-есепте тұр, бірақ бірде-бір қызмет алмаған</div>
-      <div style="font-size:12px;margin-bottom:6px"><strong style="color:#dc2626;font-size:15px">${ayFmt(never.length)}</strong> науқас (${pct(never.length)}) · ең көбі: ${topU.map(([u,n])=>u.replace(' общей практики','-уч')+' ('+n+')').join(', ')}</div>
-      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">
+      <div style="font-size:12px;margin-bottom:6px"><strong style="color:#ff7166;font-size:15px">${ayFmt(never.length)}</strong> науқас (${pct(never.length)}) · ең көбі: ${topU.map(([u,n])=>u.replace(' общей практики','-уч')+' ('+n+')').join(', ')}</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.055);border-left:3px solid var(--ink-2);padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">
         💬 <strong>Дәрігерге:</strong> «Бұл ${ayFmt(never.length)} науқас созылмалы аурумен Д-есепте тұр, бірақ қаралған кезеңде бірде-бір рет қабылдауға келмеген.
         Диспансерлік бақылау — тіркеу емес, <strong>тұрақты қарау</strong>. Бақыланбаған созылмалы ауру асқынумен ғана көрінеді.»
       </div></div>`;
@@ -4576,7 +4636,7 @@ function dregRender(){
     <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Ауру класы</th><th>Д-есепте</th><th>Қызмет алмаған</th><th>%</th><th>Орташа визит</th></tr>`;
   Object.entries(byDx).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
     h+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td>
-      <td style="color:${v.never>v.n*0.3?'#dc2626':'inherit'}">${ayFmt(v.never)}</td>
+      <td style="color:${v.never>v.n*0.3?'#ff7166':'inherit'}">${ayFmt(v.never)}</td>
       <td>${cmpPct(v.never,v.n)}</td><td>${(v.vis/v.n).toFixed(1)}</td></tr>`;
   });
   h+='</table></div></div>';
@@ -4588,7 +4648,7 @@ function dregRender(){
     <table style="font-size:12px"><tr><th>Учаске</th><th>Д-есепте</th><th>Қызмет алмаған</th><th>%</th><th>Орташа визит</th></tr>`;
   Object.entries(byU).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
     h+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td>
-      <td style="color:${v.never>v.n*0.3?'#dc2626':'inherit'}">${ayFmt(v.never)}</td>
+      <td style="color:${v.never>v.n*0.3?'#ff7166':'inherit'}">${ayFmt(v.never)}</td>
       <td>${cmpPct(v.never,v.n)}</td><td>${(v.vis/v.n).toFixed(1)}</td></tr>`;
   });
   h+='</table></div>';
@@ -4613,15 +4673,15 @@ function dregRender(){
   }
   if(typeof ATT!=='undefined' && ATT.people && ATT.people.size){
     const det=[...DREG.people.entries()].filter(([i,p])=>{ const a=ATT.people.get(i); return (p.regs||[]).some(r=>!r.off) && a && a.detached; }).length;
-    if(det) cross+=`<div style="font-size:12.5px;color:#b45309">📋 Тіркеуден шыққан, бірақ әлі Д-есепте: <strong>${ayFmt(det)}</strong> — тізімді тазалау керек.</div>`;
+    if(det) cross+=`<div style="font-size:12.5px;color:#f2a544">📋 Тіркеуден шыққан, бірақ әлі Д-есепте: <strong>${ayFmt(det)}</strong> — тізімді тазалау керек.</div>`;
   }
   if(cross) h+=`<div style="margin-top:12px;padding:10px 12px;background:var(--bg-card-2);border-radius:9px">
     <div style="font-weight:600;font-size:12.5px;margin-bottom:5px">🔗 Басқа бөлімдермен қиылысу</div>${cross}</div>`;
 
   // CSV
-  h+=`<div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+  h+=`<div style="margin-top:12px;padding:10px 12px;background:#2b2413;border:1px solid #6d5522;border-radius:9px">
     <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргер жұмыс парағы (CSV)</div>
-    <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px"><strong style="color:#b45309">Пациент дерегі бар</strong> — тек ішкі қолданысқа.</div>
+    <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px"><strong style="color:#f2a544">Пациент дерегі бар</strong> — тек ішкі қолданысқа.</div>
     <button class="icon-btn" onclick="dregExportCsv('novisit')" style="font-size:12px">Қызмет алмағандар (${ayFmt(never.length)})</button>
     <button class="icon-btn" onclick="dregExportCsv('rare')" style="font-size:12px;margin-left:6px">Сирек келетіндер (${ayFmt(rare.length)})</button>
     <button class="icon-btn" onclick="dregExportCsv('')" style="font-size:12px;margin-left:6px">Барлығы (${ayFmt(T)})</button>
@@ -4782,7 +4842,7 @@ function scrqRender(){
   const sum=f=>L.reduce((a,o)=>a+f(o),0);
   const totDetect=sum(o=>o.detect), totToD=sum(o=>o.toD), totNotDone=sum(o=>o.notDone), totM45nb=sum(o=>o.m45noBiopsy);
 
-  let h='<div class="card" style="border-color:#c7d2fe"><div class="card-title">🔬 Скрининг сапасы — клиникалық олқылықтар</div>';
+  let h='<div class="card" style="border-color:#3a4672"><div class="card-title">🔬 Скрининг сапасы — клиникалық олқылықтар</div>';
   h+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">«Скрининг ... - список» файлдары бойынша. Скринингтің мәні — бастау емес, <strong>аяқтау және табылғанды бақылауға алу</strong>.</div>';
 
   // Жиынтық кесте
@@ -4790,18 +4850,18 @@ function scrqRender(){
   L.forEach(o=>{
     const gap=o.detect>0 && o.toD===0;
     h+=`<tr><td><b>${o.name}</b></td><td>${ayFmt(o.total)}</td><td>${ayFmt(o.done)} <span style="color:var(--ink-2)">(${cmpPct(o.done,o.total)})</span></td>`
-     + `<td style="color:${o.notDone?'#b45309':'inherit'}">${ayFmt(o.notDone)}</td><td>${ayFmt(o.refuse)}</td>`
-     + `<td><b>${ayFmt(o.detect)}</b></td><td style="color:${gap?'#dc2626':'inherit'}"><b>${ayFmt(o.toD)}</b>${gap?' 🔴':''}</td></tr>`;
+     + `<td style="color:${o.notDone?'#f2a544':'inherit'}">${ayFmt(o.notDone)}</td><td>${ayFmt(o.refuse)}</td>`
+     + `<td><b>${ayFmt(o.detect)}</b></td><td style="color:${gap?'#ff7166':'inherit'}"><b>${ayFmt(o.toD)}</b>${gap?' 🔴':''}</td></tr>`;
   });
   h+='</table></div>';
 
   const cs=(icon,title,tone,evidence,sentence,note)=>{
-    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
-    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    const bg=tone==='red'?'#2b1818':tone==='yellow'?'#2b2413':'#17251c';
+    const bd=tone==='red'?'#703434':tone==='yellow'?'#6d5522':'#316045';
     return `<div style="padding:11px;border-radius:9px;margin-top:9px;background:${bg};border:1px solid ${bd}">
       <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
       <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
-      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.055);border-left:3px solid var(--ink-2);padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
       ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
   };
 
@@ -4809,14 +4869,14 @@ function scrqRender(){
   if(totM45nb>0){
     const o=L.find(x=>x.m45>0)||{m45:0};
     h+=cs('🚨','Маммографияда М4-М5, бірақ биопсия жоқ','red',
-      `М4-М5 нәтижесі: <strong>${ayFmt(o.m45)}</strong> әйел · оның <strong style="color:#dc2626;font-size:15px">${ayFmt(totM45nb)}</strong>-інде трепанобиопсия белгіленбеген`,
+      `М4-М5 нәтижесі: <strong>${ayFmt(o.m45)}</strong> әйел · оның <strong style="color:#ff7166;font-size:15px">${ayFmt(totM45nb)}</strong>-інде трепанобиопсия белгіленбеген`,
       `Бұл ${ayFmt(totM45nb)} әйелдің маммограммасы М4-М5 — қатерлі ісікке күдік. Хаттама бойынша биопсия/онкологқа жолдама міндетті. Жүйеде ол белгіленбеген: биопсия жасалды ма, әлде әйел бақылаудан шығып кетті ме?`,
       '⚠️ Бұл дереу тексеруді талап етеді. Мүмкін биопсия онкодиспансерде жасалып, осы жүйеге жазылмаған — бірақ оны растау керек.');
   }
   // 2. Анықталды, бірақ Д-есепке алынбады
   if(totDetect>totToD){
     h+=cs('🔴','Скринингте анықталды — Д-есепке алынбады','red',
-      `Анықталды: <strong>${ayFmt(totDetect)}</strong> · Д-есепке алынды: <strong>${ayFmt(totToD)}</strong> · алшақтық: <strong style="color:#dc2626">${ayFmt(totDetect-totToD)}</strong>`,
+      `Анықталды: <strong>${ayFmt(totDetect)}</strong> · Д-есепке алынды: <strong>${ayFmt(totToD)}</strong> · алшақтық: <strong style="color:#ff7166">${ayFmt(totDetect-totToD)}</strong>`,
       `Скринингте ${ayFmt(totDetect)} адамда патология анықталды, бірақ тек ${ayFmt(totToD)}-і Д-есепке алынған. Скринингтің мәні — табу емес, тапқаннан кейін бақылауға алу. Қалғандары бақылаусыз қалды ма, әлде Д-есеп жүйеде тіркелмеді ме?`,
       'Екі ықтималдық: (1) нақты клиникалық олқылық, (2) құжаттау олқылығы. Екеуі де түзетуді талап етеді — біріншісі пациент үшін, екіншісі СКПН/аудит үшін.');
   }
@@ -4826,7 +4886,7 @@ function scrqRender(){
     L.forEach(o=>Object.entries(o.byUchNotDone).forEach(([u,n])=>uchAll[u]=(uchAll[u]||0)+n));
     const top=Object.entries(uchAll).sort((a,b)=>b[1]-a[1]).slice(0,5);
     h+=cs('⏳','Скринингті бастаған, бірақ аяқтамағандар','yellow',
-      `Аяқталмаған: <strong style="color:#b45309;font-size:15px">${ayFmt(totNotDone)}</strong> адам · учаске бойынша: ${top.map(([u,n])=>`${u.replace(' общей практики','-уч')} (${n})`).join(', ')}`,
+      `Аяқталмаған: <strong style="color:#f2a544;font-size:15px">${ayFmt(totNotDone)}</strong> адам · учаске бойынша: ${top.map(([u,n])=>`${u.replace(' общей практики','-уч')} (${n})`).join(', ')}`,
       `Бұл ${ayFmt(totNotDone)} адам скринингті бастады, бірақ аяқтамады. Аяқталмаған скрининг — нәтижесі жоқ скрининг: ресурс жұмсалды, клиникалық пайда нөл. Оларды шақырып, аяқтау керек.`,
       'Мейіргерге нақты тапсырма: осы учаскелердегі аяқталмаған скринингтерді ДамуМедтен тауып, пациенттерді шақыру.');
   }
@@ -5435,7 +5495,7 @@ function popRender(){
   };
 
   if(svcOn){
-    html+=`<div class="alert" style="background:#eff6ff;border-color:#c7d2fe"><div class="alert-icon">🔗</div><div><div class="alert-text">
+    html+=`<div class="alert" style="background:#152131;border-color:#3a4672"><div class="alert-icon">🔗</div><div><div class="alert-text">
       Қызмет тарихы: <strong>${POP.srcMonths}</strong> ай шикі дерек, <strong>${ayFmt(POP.scanned)}</strong> жазба қаралды
       («💳 Төлем жүйесі» + «📤 Сыртқы бағыттар» бөлімдерінен).
     </div></div></div>`;
@@ -5468,8 +5528,8 @@ function popRender(){
     html+=`<tr><td>${u}</td><td><strong>${ayFmt(s.length)}</strong></td>
       <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='0-4').length)}</td>
       <td>${ayFmt(s.filter(p=>popAgeGrp(p.dob)==='65+').length)}</td>
-      <td style="color:${nt>s.length*0.08?'#b45309':'inherit'}">${ayFmt(nt)}</td>
-      ${svcOn?`<td style="color:${s.filter(p=>popTot(p)===0).length>s.length*0.5?'#dc2626':'inherit'}">${ayFmt(s.filter(p=>popTot(p)===0).length)}</td><td>${ayFmt(s.filter(p=>popTot(p)>=5).length)}</td>`:''}</tr>`;
+      <td style="color:${nt>s.length*0.08?'#f2a544':'inherit'}">${ayFmt(nt)}</td>
+      ${svcOn?`<td style="color:${s.filter(p=>popTot(p)===0).length>s.length*0.5?'#ff7166':'inherit'}">${ayFmt(s.filter(p=>popTot(p)===0).length)}</td><td>${ayFmt(s.filter(p=>popTot(p)>=5).length)}</td>`:''}</tr>`;
   });
   html+='</table></div><canvas id="popUchChart" height="'+Math.max(200,uchs.length*32)+'" style="margin-top:12px"></canvas></div>';
 
@@ -5489,10 +5549,10 @@ function popRender(){
   }
 
   // CSV
-  html+=`<div class="card" style="border-color:#f2dca0;background:#fffbeb">
+  html+=`<div class="card" style="border-color:#6d5522;background:#2b2413">
     <div class="card-title">📥 Тізім жүктеу (CSV)</div>
     <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
-      <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта.
+      <strong style="color:#f2a544">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта.
     </div>
     <button class="icon-btn" onclick="popExportCsv('')" style="font-size:12px">Барлығы (${ayFmt(T)})</button>
     ${svcOn?`<button class="icon-btn" onclick="popExportCsv('novisit')" style="font-size:12px;margin-left:6px">Мүлдем келмегендер (${ayFmt(never)})</button>`:''}
@@ -5505,8 +5565,8 @@ function popRender(){
   const us=uchs.map(u=>({u,n:A.filter(p=>p.uch===u).length,
     nv:A.filter(p=>p.uch===u&&popTot(p)===0).length}));
   cmpChart('pop','popUchChart',{type:'bar',data:{labels:us.map(x=>x.u),
-    datasets:[{label:'Тіркеулі халық',data:us.map(x=>x.n),backgroundColor:'#2563eb'}]
-      .concat(svcOn?[{label:'Мүлдем келмеген',data:us.map(x=>x.nv),backgroundColor:'#dc2626'}]:[])},
+    datasets:[{label:'Тіркеулі халық',data:us.map(x=>x.n),backgroundColor:'#6faaff'}]
+      .concat(svcOn?[{label:'Мүлдем келмеген',data:us.map(x=>x.nv),backgroundColor:'#ff7166'}]:[])},
     options:{indexAxis:'y',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
 }
 
@@ -5554,12 +5614,12 @@ function attRender(){
     const detWithSvc=det.filter(p=>p.before+p.after>0);
     const detRegular=det.filter(p=>p.before+p.after>=5);
     const net=A.length-det.length;
-    html+=`<div class="card" style="border-color:#fecaca">
+    html+=`<div class="card" style="border-color:#703434">
       <div class="card-title">🚪 Тіркеуден шыққандар (открепленные)</div>
       <div class="kpi-grid" style="margin-bottom:10px">
         <div class="kpi warn"><div class="kpi-label">Шыққандар</div><div class="kpi-value">${ayFmt(det.length)}</div><div class="kpi-extra">${cmpPct(det.length,A.length)} барлығынан</div></div>
         <div class="kpi"><div class="kpi-label">Бізден ем алғандар</div><div class="kpi-value">${ayFmt(detWithSvc.length)}</div><div class="kpi-extra">${cmpPct(detWithSvc.length,det.length)}</div></div>
-        <div class="kpi ${detRegular.length?'warn':''}"><div class="kpi-label">Тұрақты емделгендер</div><div class="kpi-value" style="color:${detRegular.length?'#dc2626':'inherit'}">${ayFmt(detRegular.length)}</div><div class="kpi-extra">5+ визит — нағыз жоғалту</div></div>
+        <div class="kpi ${detRegular.length?'warn':''}"><div class="kpi-label">Тұрақты емделгендер</div><div class="kpi-value" style="color:${detRegular.length?'#ff7166':'inherit'}">${ayFmt(detRegular.length)}</div><div class="kpi-extra">5+ визит — нағыз жоғалту</div></div>
         <div class="kpi"><div class="kpi-label">Таза өзгеріс</div><div class="kpi-value">${ayFmt(net)}</div><div class="kpi-extra">тіркелген − шыққан</div></div>
       </div>`;
     if(detRegular.length){
@@ -5581,7 +5641,7 @@ function attRender(){
     html+=`<div style="margin-top:10px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Учаске бойынша</div>
       <table style="font-size:12px"><tr><th>Учаске</th><th>Шыққан</th><th>Оның тұрақтысы</th></tr>`;
     Object.entries(du).sort((a,b)=>b[1].n-a[1].n).forEach(([k,v])=>{
-      html+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td><td style="color:${v.r?'#dc2626':'inherit'}">${ayFmt(v.r)}</td></tr>`;
+      html+=`<tr><td>${k}</td><td><strong>${ayFmt(v.n)}</strong></td><td style="color:${v.r?'#ff7166':'inherit'}">${ayFmt(v.r)}</td></tr>`;
     });
     html+='</table></div>';
     // Айлық динамика
@@ -5591,7 +5651,7 @@ function attRender(){
   }
 
   // ── 2. ҚАҒАЗ ӨТІНІШ БӨЛІМШЕСІ ──
-  html+=`<div class="card" style="border-color:#c7d2fe">
+  html+=`<div class="card" style="border-color:#3a4672">
     <div class="card-title">📄 Қағаз өтінішпен тіркеу — аудит</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div><label class="form-label" style="font-size:11px">Кезең басы</label>
@@ -5605,7 +5665,7 @@ function attRender(){
     const pct=v=>inRange.length?((v/inRange.length*100).toFixed(1)+'%'):'—';
     html+=`<div class="kpi-grid" style="margin-bottom:10px">
       <div class="kpi ${withBefore.length?'':'warn'}"><div class="kpi-label">Тіркелуге ДЕЙІН ем алған</div>
-        <div class="kpi-value" style="color:#16a34a">${ayFmt(withBefore.length)}</div><div class="kpi-extra">${pct(withBefore.length)}</div></div>
+        <div class="kpi-value" style="color:#57cd94">${ayFmt(withBefore.length)}</div><div class="kpi-extra">${pct(withBefore.length)}</div></div>
       <div class="kpi"><div class="kpi-label">Кез келген байланыс</div>
         <div class="kpi-value">${ayFmt(anyContact.length)}</div><div class="kpi-extra">${pct(anyContact.length)}</div></div>
       <div class="kpi"><div class="kpi-label">Байланыс жоқ</div>
@@ -5645,7 +5705,7 @@ function attRender(){
       <div style="overflow-x:auto"><table style="font-size:12px"><tr><th>Мекеме</th><th>Саны</th><th>Дейін ем алған</th><th>%</th></tr>`;
     pmTop.forEach(([k,v])=>{
       const ours=/аян/i.test(k);
-      html+=`<tr><td>${k.slice(0,48)}${ours?' <strong style="color:#16a34a">← өзіміз</strong>':''}</td><td>${ayFmt(v.n)}</td><td><strong>${ayFmt(v.b)}</strong></td><td>${cmpPct(v.b,v.n)}</td></tr>`;
+      html+=`<tr><td>${k.slice(0,48)}${ours?' <strong style="color:#57cd94">← өзіміз</strong>':''}</td><td>${ayFmt(v.n)}</td><td><strong>${ayFmt(v.b)}</strong></td><td>${cmpPct(v.b,v.n)}</td></tr>`;
     });
     html+='</table></div></div>';
 
@@ -5659,11 +5719,11 @@ function attRender(){
     html+='</table></div>';
 
     // Дәлел CSV
-    html+=`<div style="margin-top:14px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+    html+=`<div style="margin-top:14px;padding:10px 12px;background:#2b2413;border:1px solid #6d5522;border-radius:9px">
       <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Дәлел тізімі (CSV)</div>
       <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
         Тіркелуге дейін ем алған <strong>${ayFmt(withBefore.length)}</strong> пациент: визит саны, алғашқы келу күні, тіркеу себебі, бұрынғы мекеме.
-        <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ресми қолданысқа.
+        <strong style="color:#f2a544">Файлда пациент дерегі болады</strong> — тек ресми қолданысқа.
       </div>
       <button class="icon-btn" onclick="attExportProof()" style="font-size:12px">📥 Дәлел тізімін жүктеу (${ayFmt(withBefore.length)})</button>
     </div>`;
@@ -5683,8 +5743,8 @@ function attRender(){
     const ks=[...new Set([...Object.keys(dm),...Object.keys(am)])].sort();
     if(ks.length>1){
       cmpChart('att','attDetChart',{type:'bar',data:{labels:ks.map(cmpMonLabel),
-        datasets:[{label:'Тіркелген',data:ks.map(k=>am[k]||0),backgroundColor:'#16a34a'},
-                  {label:'Шыққан',data:ks.map(k=>-(dm[k]||0)),backgroundColor:'#dc2626'}]},
+        datasets:[{label:'Тіркелген',data:ks.map(k=>am[k]||0),backgroundColor:'#57cd94'},
+                  {label:'Шыққан',data:ks.map(k=>-(dm[k]||0)),backgroundColor:'#ff7166'}]},
         options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},
           title:{display:true,text:'Тіркелу ↔ шығу динамикасы'}},
           scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>Math.abs(v)}}}}});
@@ -5697,7 +5757,7 @@ function attRender(){
   if(ks.length>1 && document.getElementById('attFirstChart')){
     cmpChart('att','attFirstChart',{type:'bar',data:{labels:ks.map(cmpMonLabel),
       datasets:[{label:'Алғашқы байланыс айы',data:ks.map(k=>fm2[k]),
-        backgroundColor:ks.map((k,i)=>i===0?'#dc2626':'#2563eb')}]},
+        backgroundColor:ks.map((k,i)=>i===0?'#ff7166':'#6faaff')}]},
       options:{plugins:{legend:{display:false},title:{display:true,text:'Тіркелуге дейінгі алғашқы келу айы (қызыл = дерек шекарасы)'}}}});
   }
 }
@@ -5720,22 +5780,22 @@ function nosvcRender(){
   </div>`;
 
   const cs=(icon,title,tone,evidence,sentence,note)=>{
-    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
-    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    const bg=tone==='red'?'#2b1818':tone==='yellow'?'#2b2413':'#17251c';
+    const bd=tone==='red'?'#703434':tone==='yellow'?'#6d5522':'#316045';
     return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
       <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
       <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
-      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Мейіргерге/дәрігерге:</strong> «${sentence}»</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.055);border-left:3px solid var(--ink-2);padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Мейіргерге/дәрігерге:</strong> «${sentence}»</div>
       ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
   };
 
-  html+='<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Клиникалық олқылықтар</div>';
+  html+='<div class="card" style="border-color:#3a4672"><div class="card-title">🩺 Клиникалық олқылықтар</div>';
   html+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Бұл адамдар тізімде тұр — КПН төленеді, бірақ бірде-бір қызмет алмаған. Мәселе ақшада емес: <strong>аурулары анықталмай жатыр</strong>.</div>';
 
   if(kids>0){
     const topU=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].kids-a[1].kids).slice(0,3);
     html+=cs('👶','0–4 жастағы балалар байланыссыз','red',
-      `<strong style="color:#dc2626;font-size:15px">${ayFmt(kids)}</strong> бала (${cmpPct(kids,T)}) · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.kids+')').join(', ')}`,
+      `<strong style="color:#ff7166;font-size:15px">${ayFmt(kids)}</strong> бала (${cmpPct(kids,T)}) · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.kids+')').join(', ')}`,
       `Бұл ${ayFmt(kids)} бала бес жасқа толмаған, бірақ емханада бірде-бір рет болмаған. Осы жаста профилактикалық қарау, екпе күнтізбесі, өсу-даму мониторингі жүреді. Байланыс жоқ деген — <strong>екпесі кешігуі, дамудағы ауытқу байқалмай қалуы</strong> мүмкін деген сөз.`,
       'Ең жоғары клиникалық басымдық. Бұл балаларды учаске мейіргері арқылы белсенді іздеу керек.');
   }
@@ -5748,7 +5808,7 @@ function nosvcRender(){
   if(NOSVC.noPhone>0){
     const topU=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].noPhone-a[1].noPhone).slice(0,3);
     html+=cs('📵','Телефоны жоқ — шақыру мүмкін емес', NOSVC.noPhone/T>0.2?'red':'yellow',
-      `<strong style="color:#b45309;font-size:15px">${ayFmt(NOSVC.noPhone)}</strong> адамда (${cmpPct(NOSVC.noPhone,T)}) байланыс телефоны жоқ · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.noPhone+')').join(', ')}`,
+      `<strong style="color:#f2a544;font-size:15px">${ayFmt(NOSVC.noPhone)}</strong> адамда (${cmpPct(NOSVC.noPhone,T)}) байланыс телефоны жоқ · ең көбі: ${topU.map(([u,d])=>u.replace(' общей практики','-уч')+' ('+d.noPhone+')').join(', ')}`,
       `Бұл ${ayFmt(NOSVC.noPhone)} адамды шақыруға мүмкіндік жоқ — базада телефон жазылмаған. Қанша науқан жүргізсек те, оларға хабар жетпейді. Байланыс дерегін жинау — емдеу жұмысының алғышарты.`,
       'Мұны шешу: үй аралағанда телефон нөмірін сұрап, базаға енгізу. Бұл — бір реттік науқан, бірақ бүкіл шақыру жүйесін жұмыс істетеді.');
   }
@@ -5771,16 +5831,16 @@ function nosvcRender(){
     <div style="overflow-x:auto"><table><tr><th>Учаске</th><th>Барлығы</th><th>0–4 жас</th><th>65+</th><th>Телефонсыз</th><th>Сақтандырылмаған</th></tr>`;
   Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].total-a[1].total).forEach(([u,d])=>{
     html+=`<tr><td>${u}</td><td><strong>${ayFmt(d.total)}</strong></td>
-      <td style="color:${d.kids>0?'#dc2626':'inherit'}">${ayFmt(d.kids)}</td>
-      <td>${ayFmt(d.eld)}</td><td style="color:${d.noPhone>d.total*0.2?'#b45309':'inherit'}">${ayFmt(d.noPhone)}</td>
+      <td style="color:${d.kids>0?'#ff7166':'inherit'}">${ayFmt(d.kids)}</td>
+      <td>${ayFmt(d.eld)}</td><td style="color:${d.noPhone>d.total*0.2?'#f2a544':'inherit'}">${ayFmt(d.noPhone)}</td>
       <td>${ayFmt(d.unins)}</td></tr>`;
   });
   html+=`</table></div>
-    <div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+    <div style="margin-top:12px;padding:10px 12px;background:#2b2413;border:1px solid #6d5522;border-radius:9px">
       <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргерге шақыру парағы (CSV)</div>
       <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
         Тізім <strong>басымдық бойынша</strong> сұрыпталады: 1) 0–4 жас, 2) 65+, 3) өткен жылдан бері, 4) кезекті.
-        <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта, электронды түрде таратпа.
+        <strong style="color:#f2a544">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа, қорғалған құрылғыда сақта, электронды түрде таратпа.
       </div>
       <button class="icon-btn" onclick="nosvcExportCsv('')" style="font-size:12px">📥 Барлығы (${ayFmt(NOSVC.people.length)})</button>
       ${Object.keys(NOSVC.uchDetail).sort().map(u=>`<button class="icon-btn" onclick="nosvcExportCsv('${u.replace(/'/g,"\\'")}')" style="font-size:12px;margin-left:6px">${u.replace(' общей практики','-уч')}</button>`).join('')}
@@ -5795,13 +5855,13 @@ function nosvcRender(){
 
   const uchs=Object.entries(NOSVC.uchDetail).sort((a,b)=>b[1].total-a[1].total);
   cmpChart('nosvc','nosvcUch',{type:'bar',data:{labels:uchs.map(([u])=>u),
-    datasets:[{label:'Барлығы',data:uchs.map(([,d])=>d.total),backgroundColor:'#64748b'},
-              {label:'0–4 жас',data:uchs.map(([,d])=>d.kids),backgroundColor:'#dc2626'},
-              {label:'Телефонсыз',data:uchs.map(([,d])=>d.noPhone),backgroundColor:'#d97706'}]},
+    datasets:[{label:'Барлығы',data:uchs.map(([,d])=>d.total),backgroundColor:'var(--ink-3)'},
+              {label:'0–4 жас',data:uchs.map(([,d])=>d.kids),backgroundColor:'#ff7166'},
+              {label:'Телефонсыз',data:uchs.map(([,d])=>d.noPhone),backgroundColor:'#f2a544'}]},
     options:{indexAxis:'y',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
   cmpChart('nosvc','nosvcAge',{type:'bar',data:{labels:NOSVC_AGES,
     datasets:[{label:'Қызмет алмағандар',data:NOSVC_AGES.map(a=>NOSVC.byAge[a]||0),
-      backgroundColor:NOSVC_AGES.map(a=>a==='0-4'?'#dc2626':a==='65+'?'#d97706':'#2563eb')}]},
+      backgroundColor:NOSVC_AGES.map(a=>a==='0-4'?'#ff7166':a==='65+'?'#f2a544':'#6faaff')}]},
     options:{plugins:{legend:{display:false}}}});
 }
 
@@ -5978,10 +6038,10 @@ async function scrSyncToBot(){
 
   if(btn) btn.disabled = false;
   if(err){
-    if(st) st.innerHTML = `<span style="color:#dc2626">❌ Қате: ${String(err).slice(0,120)}</span>`;
+    if(st) st.innerHTML = `<span style="color:#ff7166">❌ Қате: ${String(err).slice(0,120)}</span>`;
   } else {
     SCRSYNC.lastResult = { total:sent, at:new Date() };
-    if(st) st.innerHTML = `<span style="color:#16a34a">✅ ${ayFmt(sent)} пациент ботқа жіберілді</span>
+    if(st) st.innerHTML = `<span style="color:#57cd94">✅ ${ayFmt(sent)} пациент ботқа жіберілді</span>
       <span style="color:var(--ink-2)"> · аты-жөнімен: ${ayFmt(built.stat.named)} (${cmpPct(built.stat.named,sent)})
       · телефонымен: ${ayFmt(built.stat.phoned)} (${cmpPct(built.stat.phoned,sent)})</span>`;
   }
@@ -6016,7 +6076,7 @@ function scrRender(){
       const tot={}; Object.keys(names).forEach(id=>tot[id]={t:0,d:0});
       Object.values(uc).forEach(items=>Object.entries(items).forEach(([id,v])=>{
         tot[id].t+=(+v.target||0); tot[id].d+=(+v.due||0); }));
-      html += `<div class="alert" style="background:#eff6ff;border-color:#c7d2fe"><div class="alert-icon">☁️</div><div><div class="alert-text">
+      html += `<div class="alert" style="background:#152131;border-color:#3a4672"><div class="alert-icon">☁️</div><div><div class="alert-text">
         <strong>Серверде сақталған қамту көрсетілуде</strong> (кезең: ${S.period}).
         Бұл — соңғы рет есептелген нәтиже. Жаңарту үшін төмендегі өрістерге
         «Прикрепленное население» тізімін жүктеңіз (қызмет тарихы «Төлем жүйесі» мен
@@ -6027,7 +6087,7 @@ function scrRender(){
       Object.keys(names).forEach(id=>{
         const t=tot[id].t, d=tot[id].d, done=t-d, p=t?(done/t*100):0;
         html += `<tr><td>${names[id]}</td><td>${ayFmt(t)}</td><td>${ayFmt(done)}</td>
-          <td><b>${ayFmt(d)}</b></td><td style="color:${p<30?'#dc2626':p<60?'#b45309':'#16a34a'}"><b>${p.toFixed(1)}%</b></td></tr>`;
+          <td><b>${ayFmt(d)}</b></td><td style="color:${p<30?'#ff7166':p<60?'#f2a544':'#57cd94'}"><b>${p.toFixed(1)}%</b></td></tr>`;
       });
       html += `</table></div>`;
       html += `<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Учаске бойынша (керек саны)</div>
@@ -6047,18 +6107,18 @@ function scrRender(){
   // Дереккөз туралы ақпарат (қызмет тарихы басқа бөлімдерден алынады)
   if(SCR.pulled){
     const p=SCR.pulled;
-    html += `<div class="alert" style="background:#eff6ff;border-color:#c7d2fe"><div class="alert-icon">🔗</div><div><div class="alert-text">
+    html += `<div class="alert" style="background:#152131;border-color:#3a4672"><div class="alert-icon">🔗</div><div><div class="alert-text">
       Қызмет тарихы басқа бөлімдерден алынды: <strong>${p.srcMonths}</strong> ай дерек, <strong>${ayFmt(p.scanned)}</strong> жазба қаралды,
-      <strong>${ayFmt(p.marked)}</strong> скрининг белгісі қойылды.${p.srcMonths?'':' <strong style="color:#b45309">Қызмет дерегі жоқ — «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдеріне выгрузка жүктеңіз.</strong>'}
+      <strong>${ayFmt(p.marked)}</strong> скрининг белгісі қойылды.${p.srcMonths?'':' <strong style="color:#f2a544">Қызмет дерегі жоқ — «💳 Төлем жүйесі» мен «📤 Сыртқы бағыттар» бөлімдеріне выгрузка жүктеңіз.</strong>'}
     </div></div></div>`;
   }
 
   // ── Пациент-деңгейлі синхрондау (мейіргерге ботта нақты тізім) ──
-  html += `<div class="card" style="border-color:#f3b4b4;background:#fffbfb">
+  html += `<div class="card" style="border-color:#703434;background:#fffbfb">
     <div class="card-title">👤 Мейіргерге нақты тізім беру (пациент-деңгейлі)</div>
     <div style="font-size:12px;color:var(--ink-2);margin-bottom:9px">
       Мейіргер ботта <strong>өз учаскесінің</strong> пациенттерін аты-жөнімен, телефонымен көреді.
-      <strong style="color:#b91c1c">Бұл әрекет боттың базасына пациент дерегін жазады.</strong>
+      <strong style="color:#ff8a80">Бұл әрекет боттың базасына пациент дерегін жазады.</strong>
       Мейіргер тек өз учаскесін көреді, әр қарау аудит журналына жазылады.
       <br>Аты-жөн мен телефон «Төлем жүйесі», «Сыртқы бағыттар», «Қызмет алмағандар» бөлімдеріндегі
       файлдардан жиналады (халық тізімінде тек инициал бар).
@@ -6075,14 +6135,14 @@ function scrRender(){
   </div>`;
 
   // Серверге сақтау батырмасы (Телеграм бот осы деректі оқиды)
-  html += `<div class="card" style="border-color:#c7d2fe">
+  html += `<div class="card" style="border-color:#3a4672">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <div style="flex:1;min-width:240px;font-size:12.5px">
         📲 <strong>Телеграм ботқа беру</strong> — учаске бойынша қамту сандары серверге жазылады.
         Мейіргер ботта «🔬 Скрининг қамтуы» батырмасынан көреді.
         <div style="font-size:11px;color:var(--ink-2);margin-top:3px">Тек сандар жіберіледі — пациент дерегі емес.</div>
       </div>
-      <button class="icon-btn" onclick="scrSaveToServer(false)" style="font-size:12.5px">☁️ Серверге сақтау</button>
+      <span style="font-size:11.5px;color:var(--ink-3)">Файл жүктелгенде автоматты сақталады</span>
     </div></div>`;
 
   const res = scrCompute();
@@ -6146,12 +6206,12 @@ function scrRender(){
       html += row;
     });
     html += `</table></div>
-      <div style="margin-top:14px;padding:11px 12px;background:#fffbeb;border:1px solid #f2dca0;border-radius:9px">
+      <div style="margin-top:14px;padding:11px 12px;background:#2b2413;border:1px solid #6d5522;border-radius:9px">
         <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">📥 Мейіргерге жұмыс тізімі (CSV)</div>
         <div style="font-size:11.5px;color:var(--ink-2);margin-bottom:8px">
           Әр мейіргерге <strong>өз учаскесінің</strong> тізімін беріңіз. Тізімде ешқашан өтпегендер жоғарыда тұрады —
           олар басымдық. Соңғы бағанда «Байланысқа шықты» белгісі бос қалдырылған.
-          <strong style="color:#b45309">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа.
+          <strong style="color:#f2a544">Файлда пациент дерегі болады</strong> — тек ішкі қолданысқа.
         </div>
         <button class="icon-btn" onclick="scrExportCsv()" style="font-size:12px">Барлығы</button>
         ${uchList.map(u=>{
@@ -6331,7 +6391,7 @@ function workRender(){
         .map(x=>({...x, d:x.c-x.p, pct:x.p?((x.c-x.p)/x.p*100):100}));
       const drops=spDelta.filter(x=>x.pct<=-40).sort((a,b)=>a.pct-b.pct).slice(0,3);
 
-      html+=`<div class="card" style="border-color:#c7d2fe"><div class="card-title">📊 Айлық салыстыру: ${cmpMonLabel(pk)} → ${cmpMonLabel(ck)}</div>
+      html+=`<div class="card" style="border-color:#3a4672"><div class="card-title">📊 Айлық салыстыру: ${cmpMonLabel(pk)} → ${cmpMonLabel(ck)}</div>
         <div class="kpi-grid">
           <div class="kpi"><div class="kpi-label">Қабылдау</div><div class="kpi-value">${ayFmt(C.total)}</div><div class="kpi-extra">${C.total>=P.total?'+':''}${ayFmt(C.total-P.total)} (${P.total?(((C.total-P.total)/P.total)*100).toFixed(0):0}%)</div></div>
           <div class="kpi ${cDocs.length<pDocs.length?'warn':''}"><div class="kpi-label">Дәрігер саны</div><div class="kpi-value">${cDocs.length}</div><div class="kpi-extra">${pDocs.length} → ${cDocs.length}${cDocs.length<pDocs.length?' ('+(pDocs.length-cDocs.length)+' кем)':''}</div></div>
@@ -6340,13 +6400,13 @@ function workRender(){
         </div>`;
 
       if(gone.length){
-        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:10px;background:#fffbeb;border:1px solid #f2dca0">
+        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:10px;background:#2b2413;border:1px solid #6d5522">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">🏖 ${cmpMonLabel(ck)} айында қабылдау жүргізбегендер (${gone.length})</div>
           <div style="font-size:12px">${gone.slice(0,6).map(g=>`${g.n} <span style="color:var(--ink-2)">(өткен айда ${ayFmt(g.v)})</span>`).join(' · ')}</div>
           <div style="font-size:11px;color:var(--ink-2);margin-top:5px">Демалыс/ауру болуы мүмкін. Жүктеме қалғандарға түседі: орташа ${pAvg} → ${cAvg}. Егер жоспарланбаған болса — қабылдау кестесін қайта қарау керек.</div></div>`;
       }
       if(drops.length){
-        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:9px;background:#fef2f2;border:1px solid #f3b4b4">
+        html+=`<div style="padding:10px 12px;border-radius:9px;margin-top:9px;background:#2b1818;border:1px solid #703434">
           <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">📉 Мамандық бойынша күрт құлдырау</div>
           <div style="font-size:12px">${drops.map(d=>`<strong>${d.sp}</strong>: ${ayFmt(d.p)} → ${ayFmt(d.c)} (${d.pct.toFixed(0)}%)`).join(' · ')}</div>
           <div style="font-size:11px;color:var(--ink-2);margin-top:5px">⚠️ Ішкі қуат түскенде пациент сыртқа жіберіледі — «Сыртқы бағыттар» бөлімінде сол мамандық бойынша жолдама өскен-өспегенін тексер. Ішкі қызмет тегін, сыртқы — клиника есебінен.</div></div>`;
@@ -6358,9 +6418,9 @@ function workRender(){
   box.innerHTML=html;
   if(vKeys.length>1 && document.getElementById('workVisitTrend')){
     cmpChart('work','workVisitTrend',{type:'bar',data:{labels:vKeys.map(cmpMonLabel),datasets:[
-      {label:'Профилактика',data:vKeys.map(k=>WORK.visits[k].prevention),backgroundColor:'#16a34a'},
-      {label:'Ауру',data:vKeys.map(k=>WORK.visits[k].disease),backgroundColor:'#dc2626'},
-      {label:'Үйде',data:vKeys.map(k=>WORK.visits[k].home),backgroundColor:'#2563eb'}
+      {label:'Профилактика',data:vKeys.map(k=>WORK.visits[k].prevention),backgroundColor:'#57cd94'},
+      {label:'Ауру',data:vKeys.map(k=>WORK.visits[k].disease),backgroundColor:'#ff7166'},
+      {label:'Үйде',data:vKeys.map(k=>WORK.visits[k].home),backgroundColor:'#6faaff'}
     ]},options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{}}},plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},title:{display:true,text:'Визит динамикасы — профилактика/ауру/үй'}}}});
   }
 }
@@ -6392,12 +6452,12 @@ function profRender(){
 
   // ── 🩺 КЛИНИКАЛЫҚ ОЛҚЫЛЫҚТАР ──
   const _cs=(icon,title,tone,evidence,sentence,note)=>{
-    const bg=tone==='red'?'#fef2f2':tone==='yellow'?'#fffbeb':'#eef7f0';
-    const bd=tone==='red'?'#f3b4b4':tone==='yellow'?'#f2dca0':'#b7ddc3';
+    const bg=tone==='red'?'#2b1818':tone==='yellow'?'#2b2413':'#17251c';
+    const bd=tone==='red'?'#703434':tone==='yellow'?'#6d5522':'#316045';
     return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
       <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
       <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
-      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге/мейіргерге:</strong> «${sentence}»</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.055);border-left:3px solid var(--ink-2);padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге/мейіргерге:</strong> «${sentence}»</div>
       ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}</div>`;
   };
   let _clin='';
@@ -6419,7 +6479,7 @@ function profRender(){
     const others = _adultU.filter(u=>u.total>0 && u.age65>0);
     const rng = others.length ? Math.round(Math.min(...others.map(u=>u.age65/u.total*100)))+'–'+Math.round(Math.max(...others.map(u=>u.age65/u.total*100)))+'%' : '—';
     _clin += _cs('🚨','Учаскеде 65+ жастағы науқас Д-есепте жоқ','red',
-      `${tgt.map(u=>`<strong>${u.name}</strong> — Д-есепте ${ayFmt(u.total)} науқас, оның 65+ жастағысы <strong style="color:#dc2626">0</strong>`).join('; ')} · басқа учаскелерде 65+ үлесі ${rng}${allMonthsZero.length?' · <strong>барлық '+keys.length+' айда нөл</strong>':''}`,
+      `${tgt.map(u=>`<strong>${u.name}</strong> — Д-есепте ${ayFmt(u.total)} науқас, оның 65+ жастағысы <strong style="color:#ff7166">0</strong>`).join('; ')} · басқа учаскелерде 65+ үлесі ${rng}${allMonthsZero.length?' · <strong>барлық '+keys.length+' айда нөл</strong>':''}`,
       `Бұл учаскеде Д-есепте тұрған ${ayFmt(tgt[0].total)} науқастың бірде-біреуі 65 жастан асқан емес. Егде адамда созылмалы ауру болмауы мүмкін емес: гипертония, диабет, жүрек-тамыр аурулары дәл осы жаста жиналады. Демек не егде науқастар Д-есепке алынбай жүр, не тіркеу дұрыс жүргізілмеген — екеуі де тексеруді талап етеді.`,
       'Статистикалық тұрғыдан нөл — кездейсоқтық емес. Осы учаскенің 65+ халқын алып, кімде созылмалы ауру бар екенін қарау керек.');
   }
@@ -6459,12 +6519,12 @@ function profRender(){
   }
 
   if(_pedU.length){
-    _clin += `<div style="padding:9px 11px;border-radius:9px;margin-bottom:9px;background:#eff6ff;border:1px solid #c7d2fe">
+    _clin += `<div style="padding:9px 11px;border-radius:9px;margin-bottom:9px;background:#152131;border:1px solid #3a4672">
       <div style="font-weight:600;font-size:12.5px;margin-bottom:3px">ℹ️ Педиатриялық учаске деп танылды</div>
       <div style="font-size:12px;color:var(--ink)">${_pedU.map(u=>`<strong>${u.name}</strong> (Д-есепте ${ayFmt(u.total)})`).join(', ')} — 65+ те, ЖФВ да жоққа тән. Бұл учаскеде негізінен балалар мен жасөспірімдер тіркелген сияқты, сондықтан <strong>ересек көрсеткіштер бойынша салыстыруға кірмейді</strong>. Ондағы Д-есеп балалар патологиясы бойынша бағаланады.</div></div>`;
   }
   if(_clin){
-    html += `<div class="card" style="border-color:#c7d2fe"><div class="card-title">🩺 Клиникалық олқылықтар</div>
+    html += `<div class="card" style="border-color:#3a4672"><div class="card-title">🩺 Клиникалық олқылықтар</div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Д-есеп — созылмалы науқасты <strong>тұрақты бақылау</strong> жүйесі. Төменде сол жүйедегі нақты олқылықтар.</div>
       ${_clin}</div>`;
   }
@@ -6489,7 +6549,7 @@ function profRender(){
   html += `<div class="card"><div class="card-title">📊 Учаске бойынша науқас саны</div><canvas id="profUch" height="${Math.max(220, L.uchastki.length*34)}"></canvas></div>`;
 
   // Шара орындалуы туралы ескерту
-  html += `<div class="card" style="border-color:#bfdbfe;background:#eff6ff">
+  html += `<div class="card" style="border-color:#bfdbfe;background:#152131">
     <div class="card-title">ℹ️ Шара орындалуы (сапаның басты көрсеткіші) — бөлек есепте</div>
     <div style="font-size:13px;color:var(--ink)">Бұл выгрузка учаске бойынша <strong>санды</strong> береді, бірақ <strong>шара орындалуын</strong> (назначено vs выполнено) көрсетпейді. Ол «Статистика диспансерного учета» есебінде — бірақ тек мекеме деңгейінде (учаске бойынша жоқ). Мекеме деңгейінде орындау <strong>76-96%</strong> (жақсы). Учаске бойынша орындауды ДамуМедтен тікелей тексер.</div>
   </div>`;
@@ -6501,17 +6561,17 @@ function profRender(){
   const t65 = keys.map(k=>PROF.months[k].uchastki.reduce((a,u)=>a+u.age65,0));
   cmpChart('prof','profTrend',{type:'line', data:{labels:keys.map(cmpMonLabel),
     datasets:[
-      {label:'Барлығы Д-есеп', data:tTotal, borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.3},
-      {label:'65+', data:t65, borderColor:'#dc2626', tension:.3}
+      {label:'Барлығы Д-есеп', data:tTotal, borderColor:'#6faaff', backgroundColor:'#6faaff22', fill:true, tension:.3},
+      {label:'65+', data:t65, borderColor:'#ff7166', tension:.3}
     ]}, options:{scales:{y:{beginAtZero:false}}}});
 
   // Учаске bar (көлденең)
   const sorted = L.uchastki.slice().sort((a,b)=>b.total-a.total);
   cmpChart('prof','profUch',{type:'bar', data:{labels:sorted.map(u=>u.name),
     datasets:[
-      {label:'Барлығы', data:sorted.map(u=>u.total), backgroundColor:'#2563eb'},
-      {label:'65+', data:sorted.map(u=>u.age65), backgroundColor:'#dc2626'},
-      {label:'ЖФВ', data:sorted.map(u=>u.jfv), backgroundColor:'#16a34a'}
+      {label:'Барлығы', data:sorted.map(u=>u.total), backgroundColor:'#6faaff'},
+      {label:'65+', data:sorted.map(u=>u.age65), backgroundColor:'#ff7166'},
+      {label:'ЖФВ', data:sorted.map(u=>u.jfv), backgroundColor:'#57cd94'}
     ]}, options:{indexAxis:'y', plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
 }
 
@@ -6589,24 +6649,24 @@ function refOrderingAudit(){
   };
   // Клиникалық сөйлем блогы
   const cs=(icon,title,strong,evidence,sentence,doctorTable,note)=>{
-    const bg=strong==='red'?'#fef2f2':strong==='yellow'?'#fffbeb':'#eef7f0';
-    const bd=strong==='red'?'#f3b4b4':strong==='yellow'?'#f2dca0':'#b7ddc3';
+    const bg=strong==='red'?'#2b1818':strong==='yellow'?'#2b2413':'#17251c';
+    const bd=strong==='red'?'#703434':strong==='yellow'?'#6d5522':'#316045';
     return `<div style="padding:11px;border-radius:9px;margin-bottom:9px;background:${bg};border:1px solid ${bd}">
       <div style="font-weight:700;font-size:13px;margin-bottom:5px">${icon} ${title}</div>
       <div style="font-size:12px;margin-bottom:6px">${evidence}</div>
-      <div style="font-size:12.5px;background:rgba(255,255,255,0.6);border-left:3px solid #475569;padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
+      <div style="font-size:12.5px;background:rgba(255,255,255,0.055);border-left:3px solid var(--ink-2);padding:6px 9px;border-radius:0 5px 5px 0;font-style:italic">💬 <strong>Дәрігерге:</strong> «${sentence}»</div>
       ${doctorTable||''}
       ${note?`<div style="font-size:10.5px;color:var(--ink-2);margin-top:5px">${note}</div>`:''}
     </div>`;
   };
 
-  let html='<div class="card" style="border-color:#c7d2fe">';
+  let html='<div class="card" style="border-color:#3a4672">';
   html+='<div class="card-title">🎯 Тапсыру аудиті — клиникалық сөйлемдер</div>';
   html+='<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">Әр анализ — экономикалық сан емес, дәрігерге айтылатын клиникалық тұжырым. Мақсат: айыптау емес, кәсіби диалог.</div>';
 
   // 1. Қалқанша — бір күні (ең күшті дәлел)
   html += cs('🦋','Қалқанша: ТТГ-мен бір күні жіберілген T3/T4/а-ТПО', sameDayN>0?'red':'green',
-    `Барлық T3/T4/а-ТПО: <strong>${ayFmt(reflexN)}</strong> · Оның ТТГ-мен <strong>дәл бір күні</strong>: <strong style="color:#dc2626;font-size:15px">${ayFmt(sameDayN)}</strong> · артық шығын: <strong style="color:#b45309">${cmpMoney(sameDaySum)}</strong>`,
+    `Барлық T3/T4/а-ТПО: <strong>${ayFmt(reflexN)}</strong> · Оның ТТГ-мен <strong>дәл бір күні</strong>: <strong style="color:#ff7166;font-size:15px">${ayFmt(sameDayN)}</strong> · артық шығын: <strong style="color:#f2a544">${cmpMoney(sameDaySum)}</strong>`,
     `Сіз ${ayFmt(sameDayN)} T3/T4/а-ТПО анализін ТТГ-мен дәл бір күні жібердіңіз — ТТГ нәтижесі шықпай тұрып. Бұл reflex-тәртіп емес: алдымен тек ТТГ, ол ауытқыса ғана қалғаны, кейінірек.`,
     sameDayN>0?('<div style="font-size:12px;font-weight:600;margin-top:6px">Кім жіберген:</div>'+docTable(sameDayByDoc,'Бір күні жолдама',6)):'',
     'Даусыз дәлел — «ауру науқасым көп» деген жауап жүрмейді (нәтиже шықпай тұрып жазылған).');
@@ -6684,15 +6744,15 @@ function refLabAnalysis(){
   }
   if(totalSum===0) return '';
 
-  let html = '<div class="card" style="border-color:#fde68a">';
+  let html = '<div class="card" style="border-color:#6d5522">';
   html += '<div class="card-title">🧪 Зертхана талдауы — ысырап пен қымбат анализдер</div>';
 
   // 1. Ішке қайтаруға болатын
-  html += `<div style="padding:12px;background:#fffbeb;border-radius:10px;margin-bottom:12px">
+  html += `<div style="padding:12px;background:#2b2413;border-radius:10px;margin-bottom:12px">
     <div style="font-size:14px;font-weight:600;margin-bottom:6px">1. Ішкі зертхана істей алатын, бірақ сыртқа кеткен</div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px">
       <div><div style="font-size:11px;color:var(--ink-2)">Жолдама</div><div style="font-size:20px;font-weight:700">${ayFmt(inhouseN)}</div></div>
-      <div><div style="font-size:11px;color:var(--ink-2)">Сома</div><div style="font-size:20px;font-weight:700;color:#b45309">${cmpMoney(inhouseSum)}</div></div>
+      <div><div style="font-size:11px;color:var(--ink-2)">Сома</div><div style="font-size:20px;font-weight:700;color:#f2a544">${cmpMoney(inhouseSum)}</div></div>
       <div><div style="font-size:11px;color:var(--ink-2)">Сыртқы шығыннан</div><div style="font-size:20px;font-weight:700">${cmpPct(inhouseSum,totalSum)}</div></div>
     </div>`;
   const inhLines = Object.entries(inhouse).filter(([t,v])=>v.n>0);
@@ -6705,7 +6765,7 @@ function refLabAnalysis(){
     html += '</table>';
     html += `<div style="font-size:11px;color:var(--ink-2);margin-top:6px">Егер зертханаң бос қуаттылықта тұрса, бұларды ішке қайтарып үнемдеуге болады. Бірақ бұл — кіші рычаг. Ескер: реагент жетіспеуі, әдіс, немесе аккредитация себебінен сыртқа жіберілуі де мүмкін.</div>`;
   } else {
-    html += '<div style="font-size:13px;color:#15803d">✅ Базалық анализдер сыртқа кетпейді.</div>';
+    html += '<div style="font-size:13px;color:#57cd94">✅ Базалық анализдер сыртқа кетпейді.</div>';
   }
   html += '</div>';
 
@@ -7036,8 +7096,8 @@ function refRender(){
     if (moKeys.length>1 && document.getElementById('refFilterChart')){
       cmpChart('ref','refFilterChart',{type:'bar', data:{labels:moKeys.map(cmpMonLabel),
         datasets:[
-          {label:'Қызмет саны', data:moKeys.map(k=>aggF.byMonth[k].n), backgroundColor:'#2563eb', yAxisID:'y'},
-          {label:'Сома (млн)', data:moKeys.map(k=>+(aggF.byMonth[k].sum/1e6).toFixed(2)), type:'line', borderColor:'#16a34a', backgroundColor:'#16a34a', yAxisID:'y1', tension:.3}
+          {label:'Қызмет саны', data:moKeys.map(k=>aggF.byMonth[k].n), backgroundColor:'#6faaff', yAxisID:'y'},
+          {label:'Сома (млн)', data:moKeys.map(k=>+(aggF.byMonth[k].sum/1e6).toFixed(2)), type:'line', borderColor:'#57cd94', backgroundColor:'#57cd94', yAxisID:'y1', tension:.3}
         ]},
         options:{plugins:{title:{display:true,text:'Сүзілген нәтиже — айлық динамика'},legend:{position:'bottom',labels:{boxWidth:12,font:{size:10}}}},
           scales:{y:{title:{display:true,text:'саны'}},y1:{position:'right',grid:{display:false},title:{display:true,text:'млн тг'}}}}});
@@ -7046,8 +7106,8 @@ function refRender(){
 
   // Графиктер
   cmpChart('ref','refTrend',{type:'line', data:{labels:keys.map(cmpMonLabel),
-    datasets:[{label:'Қызмет саны', data:keys.map(k=>monthly[k].n), borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.3},
-              {label:'Сома (млн)', data:keys.map(k=>monthly[k].sum/1e6), borderColor:'#16a34a', yAxisID:'y1', tension:.3}]},
+    datasets:[{label:'Қызмет саны', data:keys.map(k=>monthly[k].n), borderColor:'#6faaff', backgroundColor:'#6faaff22', fill:true, tension:.3},
+              {label:'Сома (млн)', data:keys.map(k=>monthly[k].sum/1e6), borderColor:'#57cd94', yAxisID:'y1', tension:.3}]},
     options:{scales:{y:{title:{display:true,text:'саны'}}, y1:{position:'right',grid:{display:false},title:{display:true,text:'млн тг'}}}}});
   const moTop=Object.entries(allMO).sort((a,b)=>b[1].n-a[1].n).slice(0,7);
   cmpChart('ref','refMO',{type:'doughnut', data:{labels:moTop.map(x=>x[0].slice(0,22)), datasets:[{data:moTop.map(x=>x[1].n), backgroundColor:CMP_PALETTE}]}, options:{plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
@@ -7144,8 +7204,8 @@ function psyRender(){
 
   // Айлар салыстыру кестесі
   html += `<div class="card"><div class="card-title">Айлық нәтиже</div><div style="overflow-x:auto"><table><tr><th>Ай</th><th>Қызмет</th><th>Сома, тг</th><th>Қате</th><th>Қате %</th></tr>`;
-  keys.forEach(k=>{ const m=monthly[k]; html += `<tr><td><strong>${cmpMonLabel(k)}</strong></td><td>${ayFmt(m.n)}</td><td>${ayFmt(m.sum)}</td><td style="color:${m.err?'#dc2626':'inherit'}">${m.err}</td><td>${cmpPct(m.err,m.n)}</td></tr>`; });
-  html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td><strong>${ayFmt(totN)}</strong></td><td><strong>${ayFmt(totS)}</strong></td><td><strong>${totErr}</strong></td><td>${cmpPct(totErr,totN)}</td></tr></table></div></div>`;
+  keys.forEach(k=>{ const m=monthly[k]; html += `<tr><td><strong>${cmpMonLabel(k)}</strong></td><td>${ayFmt(m.n)}</td><td>${ayFmt(m.sum)}</td><td style="color:${m.err?'#ff7166':'inherit'}">${m.err}</td><td>${cmpPct(m.err,m.n)}</td></tr>`; });
+  html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td><td><strong>${ayFmt(totN)}</strong></td><td><strong>${ayFmt(totS)}</strong></td><td><strong>${totErr}</strong></td><td>${cmpPct(totErr,totN)}</td></tr></table></div></div>`;
 
   // Орындаушылар (учаске орнына)
   html += `<div class="card"><div class="card-title">👥 Қызметкер бойынша көлем (учаске прокси)</div>
@@ -7161,11 +7221,11 @@ function psyRender(){
     const topSvc = Object.entries(v.svc||{}).sort((a,b)=>b[1]-a[1])[0];
     const svcName = topSvc?topSvc[0]:'';
     // Рөл анықтау (мейіргер / тар маман / семья дәрігері)
-    let role='Дәрігер', roleColor='#64748b';
+    let role='Дәрігер', roleColor='var(--ink-3)';
     if (/медицинская сестра|мейіргер|медсестра/i.test(svcName)){ role='Мейіргер'; roleColor='#0891b2'; }
-    else if (/семейный врач|жалпы практика|врач общей/i.test(svcName)){ role='Семья дәрігері'; roleColor='#16a34a'; }
+    else if (/семейный врач|жалпы практика|врач общей/i.test(svcName)){ role='Семья дәрігері'; roleColor='#57cd94'; }
     else if (/консультация/i.test(svcName)){ role='Тар маман'; roleColor='#9333ea'; }
-    else if (/узи|ультразвук|рентген|флюор|лаборат|анализ/i.test(svcName)){ role='Диагностика'; roleColor='#d97706'; }
+    else if (/узи|ультразвук|рентген|флюор|лаборат|анализ/i.test(svcName)){ role='Диагностика'; roleColor='#f2a544'; }
     return {name, n:v.n, sum:v.sum, svcTypes:Object.keys(v.svc||{}).length, topSvc:svcName, role, roleColor};
   });
   execList.sort((a,b)=>a.n-b.n);
@@ -7173,7 +7233,7 @@ function psyRender(){
   const medN = nDoc? execList[Math.floor(nDoc/2)].n : 0;
   const avgN = nDoc? Math.round(execList.reduce((a,d)=>a+d.n,0)/nDoc) : 0;
   if (nDoc>3){
-    html += `<div class="card" style="border-color:#fecaca">
+    html += `<div class="card" style="border-color:#703434">
       <div class="card-title">📉 Ең аз қызмет көрсеткен қызметкерлер</div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">
         <strong>Назар аудар:</strong> «Аз қызмет» ≠ «нашар жұмыс». Мейіргер, тар маман (сирек жүгінеді) немесе жарты ставка дәрігер табиғи түрде аз көрсетеді. Рөл мен басты қызмет түріне қарап баға бер. Медиана: <strong>${medN}</strong>, орташа: <strong>${avgN}</strong> қызмет/қызметкер.
@@ -7188,7 +7248,7 @@ function psyRender(){
         <td>${d.name}</td>
         <td><span style="color:${d.roleColor};font-size:11px;font-weight:600">${d.role}</span></td>
         <td><strong>${ayFmt(d.n)}</strong> ${flag}</td>
-        <td style="color:${ratio<0.6?'#b45309':'inherit'};font-size:12px">${vsMed}</td>
+        <td style="color:${ratio<0.6?'#f2a544':'inherit'};font-size:12px">${vsMed}</td>
         <td>${ayFmt(Math.round(d.sum))}</td>
         <td style="font-size:12px;color:var(--ink-2)">${d.topSvc.slice(0,35)}</td>
       </tr>`;
@@ -7236,11 +7296,11 @@ function psyRender(){
   lensMount('psy');
 
   cmpChart('psy','psyTrend',{type:'line', data:{labels:keys.map(cmpMonLabel),
-    datasets:[{label:'Қызмет', data:keys.map(k=>monthly[k].n), borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.3},
-              {label:'Қате', data:keys.map(k=>monthly[k].err), borderColor:'#dc2626', yAxisID:'y1', tension:.3}]},
+    datasets:[{label:'Қызмет', data:keys.map(k=>monthly[k].n), borderColor:'#6faaff', backgroundColor:'#6faaff22', fill:true, tension:.3},
+              {label:'Қате', data:keys.map(k=>monthly[k].err), borderColor:'#ff7166', yAxisID:'y1', tension:.3}]},
     options:{scales:{y:{title:{display:true,text:'қызмет'}}, y1:{position:'right',grid:{display:false},title:{display:true,text:'қате'}}}}});
   const exTop=Object.entries(allExec).sort((a,b)=>b[1].n-a[1].n).slice(0,12);
-  cmpChart('psy','psyExec',{type:'bar', data:{labels:exTop.map(x=>x[0].split(' ').slice(0,2).join(' ')), datasets:[{label:'Қызмет саны', data:exTop.map(x=>x[1].n), backgroundColor:'#2563eb'}]}, options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:10}}}}}});
+  cmpChart('psy','psyExec',{type:'bar', data:{labels:exTop.map(x=>x[0].split(' ').slice(0,2).join(' ')), datasets:[{label:'Қызмет саны', data:exTop.map(x=>x[1].n), backgroundColor:'#6faaff'}]}, options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:10}}}}}});
 }
 /* ============================================================
    📜 БӨЛІМ: КЕЛІСІМШАРТТАРДЫ САЛЫСТЫРУ (жылдар бойынша)
@@ -7330,13 +7390,13 @@ function conRender(){
     for (let m=0;m<12;m++){
       const vals = yrs.map(y=>mSumByYear[y][m]);
       let extra='';
-      if (yrs.length===2){ const d=vals[1]-vals[0]; const pct=vals[0]?100*d/vals[0]:null; extra=`<td style="color:${d>=0?'#15803d':'#dc2626'}">${d>=0?'+':''}${ayFmt(Math.round(d))}</td><td style="color:${d>=0?'#15803d':'#dc2626'}">${pct===null?'—':(d>=0?'+':'')+pct.toFixed(0)+'%'}</td>`; }
+      if (yrs.length===2){ const d=vals[1]-vals[0]; const pct=vals[0]?100*d/vals[0]:null; extra=`<td style="color:${d>=0?'#57cd94':'#ff7166'}">${d>=0?'+':''}${ayFmt(Math.round(d))}</td><td style="color:${d>=0?'#57cd94':'#ff7166'}">${pct===null?'—':(d>=0?'+':'')+pct.toFixed(0)+'%'}</td>`; }
       html += `<tr><td><strong>${AY_MONTH_KZ[m+1]}</strong></td>${vals.map(v=>'<td>'+ayFmt(Math.round(v))+'</td>').join('')}${extra}</tr>`;
     }
     const totByYear = yrs.map(y=>mSumByYear[y].reduce((a,b)=>a+b,0));
     let totExtra='';
     if (yrs.length===2){ const d=totByYear[1]-totByYear[0]; const pct=totByYear[0]?100*d/totByYear[0]:null; totExtra=`<td><strong>${d>=0?'+':''}${ayFmt(Math.round(d))}</strong></td><td><strong>${pct===null?'—':(d>=0?'+':'')+pct.toFixed(0)+'%'}</strong></td>`; }
-    html += `<tr style="background:#f5f5f4"><td><strong>Σ жыл</strong></td>${totByYear.map(v=>'<td><strong>'+ayFmt(Math.round(v))+'</strong></td>').join('')}${totExtra}</tr></table></div></div>`;
+    html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ жыл</strong></td>${totByYear.map(v=>'<td><strong>'+ayFmt(Math.round(v))+'</strong></td>').join('')}${totExtra}</tr></table></div></div>`;
   }
 
   // Бағыт бойынша салыстыру кестесі
@@ -7347,7 +7407,7 @@ function conRender(){
     const vals = yrs.map(y=>{ const L=CON.years[y].lines.find(x=>x.key===k); return L?L.annualSum:null; });
     let delta='—';
     const first=vals.find(v=>v), last=[...vals].reverse().find(v=>v);
-    if (yrs.length>1 && first && last && first>0){ const d=100*(last-first)/first; delta=`<span style="color:${d>=0?'#15803d':'#dc2626'}">${d>=0?'+':''}${d.toFixed(0)}%</span>`; }
+    if (yrs.length>1 && first && last && first>0){ const d=100*(last-first)/first; delta=`<span style="color:${d>=0?'#57cd94':'#ff7166'}">${d>=0?'+':''}${d.toFixed(0)}%</span>`; }
     html += `<tr><td>${allKeys[k].slice(0,50)}</td>${vals.map(v=>'<td>'+(v===null?'—':ayFmt(v))+'</td>').join('')}${yrs.length>1?'<td>'+delta+'</td>':''}</tr>`;
   }
   html += `</table></div></div>`;
@@ -7386,8 +7446,8 @@ function conRender(){
 
   // Графиктер
   cmpChart('con','conTotal',{type:'bar', data:{labels:yrs, datasets:[
-    {label:'ГОБМП', data:yrs.map(y=>CON.years[y].gobmp||0), backgroundColor:'#2563eb'},
-    {label:'ОСМС', data:yrs.map(y=>CON.years[y].osms||0), backgroundColor:'#16a34a'}]},
+    {label:'ГОБМП', data:yrs.map(y=>CON.years[y].gobmp||0), backgroundColor:'#6faaff'},
+    {label:'ОСМС', data:yrs.map(y=>CON.years[y].osms||0), backgroundColor:'#57cd94'}]},
     options:{scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
   if (yrs.length>1){
     // Айлық қатарлас баған
@@ -7400,7 +7460,7 @@ function conRender(){
   if (yrs.length===1){
     const c=CON.years[yrs[0]];
     const mSum=Array(12).fill(0); c.lines.forEach(L=>L.sum.forEach((v,i)=>mSum[i]+=v||0));
-    cmpChart('con','conMonthly',{type:'line', data:{labels:AY_MONTH_KZ.slice(1), datasets:[{label:'Айлық жоспар', data:mSum, borderColor:'#2563eb', backgroundColor:'#2563eb22', fill:true, tension:.2}]}, options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
+    cmpChart('con','conMonthly',{type:'line', data:{labels:AY_MONTH_KZ.slice(1), datasets:[{label:'Айлық жоспар', data:mSum, borderColor:'#6faaff', backgroundColor:'#6faaff22', fill:true, tension:.2}]}, options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
     const top=c.lines.slice().sort((a,b)=>b.annualSum-a.annualSum).slice(0,8);
     cmpChart('con','conStruct',{type:'doughnut', data:{labels:top.map(L=>L.name.slice(0,24)), datasets:[{data:top.map(L=>L.annualSum), backgroundColor:CMP_PALETTE}]}, options:{plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
   }
@@ -7456,15 +7516,15 @@ function schRender(){
     keys.forEach(k=>{ const v=monthly[k].lm[lk]; const s=v?v.sum||0:0; rt+=s; html += `<td>${s?ayFmt(s):'—'}</td>`; });
     html += `<td><strong>${ayFmt(rt)}</strong></td></tr>`;
   });
-  html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td>${keys.map(k=>'<td><strong>'+ayFmt(monthly[k].tot)+'</strong></td>').join('')}<td><strong>'+ayFmt(totS)+'</strong></td></tr>`.replace("'+ayFmt(totS)+'", ayFmt(totS));
+  html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td>${keys.map(k=>'<td><strong>'+ayFmt(monthly[k].tot)+'</strong></td>').join('')}<td><strong>'+ayFmt(totS)+'</strong></td></tr>`.replace("'+ayFmt(totS)+'", ayFmt(totS));
   html += `</table></div></div>`;
   if (typeof trendPanel==='function' && keys.length>=3){
     html += trendPanel('sch', keys.map(k=>({period:k, value:monthly[k].tot})), 'Айлық ұсыныс сомасы', 'тг');
     box.innerHTML=html;
   } else box.innerHTML=html;
   cmpChart('sch','schTrend',{type:'line', data:{labels:keys.map(cmpMonLabel), datasets:[
-    {label:'ГОБМП', data:keys.map(k=>monthly[k].g), borderColor:'#2563eb', tension:.3},
-    {label:'ОСМС', data:keys.map(k=>monthly[k].o), borderColor:'#16a34a', tension:.3}]},
+    {label:'ГОБМП', data:keys.map(k=>monthly[k].g), borderColor:'#6faaff', tension:.3},
+    {label:'ОСМС', data:keys.map(k=>monthly[k].o), borderColor:'#57cd94', tension:.3}]},
     options:{scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
 }
 
@@ -7490,8 +7550,8 @@ function proRender(){
   </div>`;
   html += `<div class="card"><div class="card-title">Айлық: ұсынылды / қабылданды / жоғалту</div><canvas id="proTrend" height="110"></canvas></div>`;
   html += `<div class="card"><div class="card-title">Айлық деталь</div><div style="overflow-x:auto"><table><tr><th>Ай</th><th>Ұсынылды</th><th>Дефект</th><th>Линейка</th><th>Штраф</th><th>Қабылданды</th><th>%</th></tr>`;
-  keys.forEach(k=>{ const m=M[k]; html += `<tr><td><strong>${cmpMonLabel(k)}</strong></td><td>${ayFmt(m.pred)}</td><td style="color:#b45309">${ayFmt(m.cut)}</td><td style="color:#b45309">${ayFmt(m.lin)}</td><td style="color:${m.oth>0?'#dc2626':'inherit'}">${ayFmt(m.oth)}</td><td><strong>${ayFmt(m.acc)}</strong></td><td>${cmpPct(m.acc,m.pred)}</td></tr>`; });
-  html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td><strong>${ayFmt(tPred)}</strong></td><td><strong>${ayFmt(tCut)}</strong></td><td><strong>${ayFmt(tLin)}</strong></td><td><strong>${ayFmt(tOth)}</strong></td><td><strong>${ayFmt(tAcc)}</strong></td><td><strong>${cmpPct(tAcc,tPred)}</strong></td></tr></table></div></div>`;
+  keys.forEach(k=>{ const m=M[k]; html += `<tr><td><strong>${cmpMonLabel(k)}</strong></td><td>${ayFmt(m.pred)}</td><td style="color:#f2a544">${ayFmt(m.cut)}</td><td style="color:#f2a544">${ayFmt(m.lin)}</td><td style="color:${m.oth>0?'#ff7166':'inherit'}">${ayFmt(m.oth)}</td><td><strong>${ayFmt(m.acc)}</strong></td><td>${cmpPct(m.acc,m.pred)}</td></tr>`; });
+  html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td><td><strong>${ayFmt(tPred)}</strong></td><td><strong>${ayFmt(tCut)}</strong></td><td><strong>${ayFmt(tLin)}</strong></td><td><strong>${ayFmt(tOth)}</strong></td><td><strong>${ayFmt(tAcc)}</strong></td><td><strong>${cmpPct(tAcc,tPred)}</strong></td></tr></table></div></div>`;
   // Дефект бағыттар бойынша (барлық ай)
   const cutMap={};
   keys.forEach(k=>PRO.months[k].services.forEach(sv=>{ if(sv.sumCut){ cutMap[sv.name]=cutMap[sv.name]||{n:0,sum:0}; cutMap[sv.name].n+=(sv.qtyCut||0); cutMap[sv.name].sum+=sv.sumCut; } }));
@@ -7521,9 +7581,9 @@ function proRender(){
     let tW=0;
     linServices.forEach(n=>{
       const L=linMap[n]; const over=L.fact-L.plan; tW+=L.withheld;
-      html += `<tr><td>${n}</td><td>${ayFmt(Math.round(L.fact))}</td><td>${ayFmt(Math.round(L.plan))}</td><td style="color:${over>0?'#b45309':'inherit'}">${over>0?'+'+ayFmt(Math.round(over)):'—'}</td><td style="color:#dc2626"><strong>${ayFmt(Math.round(L.withheld))}</strong></td><td>${L.fact?cmpPct(L.withheld,L.fact):'—'}</td></tr>`;
+      html += `<tr><td>${n}</td><td>${ayFmt(Math.round(L.fact))}</td><td>${ayFmt(Math.round(L.plan))}</td><td style="color:${over>0?'#f2a544':'inherit'}">${over>0?'+'+ayFmt(Math.round(over)):'—'}</td><td style="color:#ff7166"><strong>${ayFmt(Math.round(L.withheld))}</strong></td><td>${L.fact?cmpPct(L.withheld,L.fact):'—'}</td></tr>`;
     });
-    html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td colspan="3"></td><td style="color:#dc2626"><strong>${ayFmt(Math.round(tW))}</strong></td><td></td></tr></table></div>`;
+    html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td><td colspan="3"></td><td style="color:#ff7166"><strong>${ayFmt(Math.round(tW))}</strong></td><td></td></tr></table></div>`;
     // Айлық динамика графигі (топ-5 қызмет)
     html += `<canvas id="proLinByMonth" height="110" style="margin-top:12px"></canvas></div>`;
   }
@@ -7539,14 +7599,14 @@ function proRender(){
   }
   box.innerHTML=html;
   cmpChart('pro','proTrend',{type:'bar', data:{labels:keys.map(cmpMonLabel), datasets:[
-    {label:'Ұсынылды', data:keys.map(k=>M[k].pred), backgroundColor:'#94a3b8'},
-    {label:'Қабылданды', data:keys.map(k=>M[k].acc), backgroundColor:'#16a34a'},
-    {label:'Жоғалту', data:keys.map(k=>M[k].loss), type:'line', borderColor:'#dc2626', yAxisID:'y1'}]},
+    {label:'Ұсынылды', data:keys.map(k=>M[k].pred), backgroundColor:'var(--ink-3)'},
+    {label:'Қабылданды', data:keys.map(k=>M[k].acc), backgroundColor:'#57cd94'},
+    {label:'Жоғалту', data:keys.map(k=>M[k].loss), type:'line', borderColor:'#ff7166', yAxisID:'y1'}]},
     options:{scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}},y1:{position:'right',grid:{display:false},ticks:{callback:v=>(v/1e6).toFixed(1)+'млн'}}}}});
   // Линейка айлық динамика (топ-5 ұсталған қызмет)
   if (linServices.length){
     const top5 = linServices.slice(0,5);
-    const palette=['#dc2626','#ea580c','#d97706','#ca8a04','#65a30d'];
+    const palette=['#ff7166','#ea580c','#f2a544','#ca8a04','#65a30d'];
     cmpChart('pro','proLinByMonth',{type:'bar', data:{labels:keys.map(cmpMonLabel),
       datasets: top5.map((n,i)=>({label:n.length>30?n.slice(0,30)+'…':n, data:keys.map(k=>(linByMonth[n]&&linByMonth[n][k])||0), backgroundColor:palette[i%palette.length]}))},
       options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:10}}},title:{display:true,text:'Линейка ұстауы — қызмет түрі × ай'}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>(v/1e6).toFixed(1)+'млн'}}}}});
@@ -7575,7 +7635,7 @@ function actRender(){
   html += `<div class="card"><div class="card-title">Аударым динамикасы</div><canvas id="actTrend" height="110"></canvas></div>`;
   html += `<div class="card"><div class="card-title">Айлық деталь</div><div style="overflow-x:auto"><table><tr><th>Ай</th><th>Аванс ұсталды</th><th>Аударымға</th></tr>`;
   keys.forEach(k=>{ html += `<tr><td><strong>${cmpMonLabel(k)}</strong></td><td>${ayFmt(M[k].avans)}</td><td><strong>${ayFmt(M[k].toPay)}</strong></td></tr>`; });
-  html += `<tr style="background:#f5f5f4"><td><strong>Σ</strong></td><td><strong>${ayFmt(tAv)}</strong></td><td><strong>${ayFmt(tPay)}</strong></td></tr></table></div></div>`;
+  html += `<tr style="background:var(--bg-card-2)"><td><strong>Σ</strong></td><td><strong>${ayFmt(tAv)}</strong></td><td><strong>${ayFmt(tPay)}</strong></td></tr></table></div></div>`;
   // Инсайт
   const ins=[];
   const max=keys.slice().sort((a,b)=>M[b].toPay-M[a].toPay)[0], min=keys.slice().sort((a,b)=>M[a].toPay-M[b].toPay)[0];
@@ -7587,7 +7647,7 @@ function actRender(){
   }
   box.innerHTML=html;
   cmpChart('act','actTrend',{type:'bar', data:{labels:keys.map(cmpMonLabel), datasets:[
-    {label:'Аударымға', data:keys.map(k=>M[k].toPay), backgroundColor:'#16a34a'},
+    {label:'Аударымға', data:keys.map(k=>M[k].toPay), backgroundColor:'#57cd94'},
     {label:'Аванс ұсталды', data:keys.map(k=>M[k].avans), backgroundColor:'#f59e0b'}]},
     options:{scales:{y:{ticks:{callback:v=>(v/1e6).toFixed(0)+'млн'}}}}});
 }
