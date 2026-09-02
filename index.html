@@ -670,7 +670,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.1</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.2</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn" id="themeBtn" title="Ашық / күңгірт фон" onclick="ayToggleTheme()">🌙</button>
@@ -682,6 +682,8 @@
 
 <nav class="tabs">
   <div class="tabs-inner">
+      <div class="navgrp">🧠 Эксперт</div>
+      <button class="tab" data-tab="exp">🧠 Эксперт қорытындысы</button>
       <div class="navgrp">💰 Экономика</div>
       <button class="tab active" data-tab="con">📜 Шарттар</button>
       <button class="tab" data-tab="psy">💳 Төлем жүйесі</button>
@@ -1023,6 +1025,18 @@
 
   <!-- ============ ЗАҢНАМА ============ -->
   <!-- «laws» бөлімі v15.6-да алынды -->
+  <section class="section" id="exp">
+    <div class="section-head">
+      <h1 class="section-title">Эксперт қорытындысы</h1>
+      <div class="section-sub">Барлық бөлімдегі деректің байланысы · үш аудитория үшін нақты әрекет</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <button class="icon-btn primary" onclick="expRefresh()" style="font-size:12.5px">🔄 Жаңарту</button>
+      <span style="font-size:11.5px;color:var(--ink-3)">Выгрузка жүктелген сайын да автоматты қайта есептеледі</span>
+    </div>
+    <div id="expReport"></div>
+  </section>
+
   <section class="section" id="con">
     <div class="section-head"><h1 class="section-title">Келісімшарттарды салыстыру</h1>
       <div class="section-sub">Жылдар бойынша шарт жоспарын салыстыр. 2026 (E-16-0126-00089) тігілген. Басқа жылды JSON-шаблонмен қос.</div></div>
@@ -1314,6 +1328,7 @@ function initApp() {
          Себебі: пайдаланушы алдымен осы бөлімге файл жүктеп, СОСЫН «Төлем жүйесі» мен
          «Сыртқы бағыттар» бөлімдеріне выгрузка жүктеуі мүмкін — сонда бұл бөлім ескі
          (бос) нәтижені көрсетіп қалады. Табқа кірген сайын қайта санаймыз. */
+      try{ if(_sec==='exp' && typeof expRefresh==='function') expRefresh(); }catch(e){}
       try{
         if(_sec==='scr' && typeof SCR!=='undefined' && SCR.people && SCR.people.size){
           if(typeof scrPullServices==='function') scrPullServices();
@@ -3634,6 +3649,9 @@ function ayRecomputeDependents(){
   try{ if(typeof DREG!=='undefined' && DREG.people && DREG.people.size){
     if(typeof dregMatch==='function') dregMatch();
     if(typeof profRender==='function') profRender(); } }catch(e){}
+  /* v16.2 — эксперт қорытындысы кез келген жаңа выгрузкадан кейін қайта есептеледі */
+  try{ if(typeof expCompute==='function'){ expCompute();
+        if(document.getElementById('expReport')) expRender(); } }catch(e){}
 }
 
 function psyExecCol(header){
@@ -6896,6 +6914,327 @@ function refFilterUI(liveKeys){
 function refSetFilter(key, val){ if(val) REF.filter[key]=val; else delete REF.filter[key]; refRender(); }
 function refSetMonth(val){ REF.filterMonth=val; refRender(); }
 function refClearFilter(){ REF.filter={}; REF.filterMonth=''; refRender(); }
+
+/* ============================================================
+   🧠 ЭКСПЕРТ — бөлімдер арасындағы байланысты талдау (v16.2)
+   ------------------------------------------------------------
+   Мақсаты: жеке-жеке бөлімдерде жатқан деректерді қиыстырып,
+   НАҚТЫ АДАМҒА арналған нақты қорытынды шығару.
+
+   Үш аудитория: мейіргер · дәрігер · басшылық.
+   Әр қорытындының «✅ Орындалды» батырмасы бар → мұрағатқа кетеді.
+
+   ⚠️ МҰРАҒАТ КІЛТІНІҢ ЛОГИКАСЫ (ең маңызды шешім):
+      key = ереже + кезең + МӘН
+      Яғни «8 әйел» деген қорытындыны жапсаң, ол жабылады.
+      Ал келесі айда сан 11-ге өссе — кілт өзгереді де, қорытынды
+      ҚАЙТАДАН шығады. Жабылған нәрсе өзгерсе, ол қайта көрінеді.
+      Мұнсыз мұрағат «көрмегенсу» құралына айналар еді.
+   ============================================================ */
+const EXP = { findings: [], ts: null, tab: 'nurse' };
+const EXP_ARCH_KEY = 'ayan_exp_archive';
+
+function expArchLoad(){ try{ return JSON.parse(localStorage.getItem(EXP_ARCH_KEY)||'{}'); }catch(e){ return {}; } }
+function expArchSave(o){ try{ localStorage.setItem(EXP_ARCH_KEY, JSON.stringify(o)); }catch(e){} }
+function expDone(key){ const a=expArchLoad(); a[key]={ts:new Date().toISOString()}; expArchSave(a); expRender(); }
+function expUndo(key){ const a=expArchLoad(); delete a[key]; expArchSave(a); expRender(); }
+function expClearArch(){ if(confirm('Мұрағатты толық тазалау керек пе?')){ expArchSave({}); expRender(); } }
+
+const EXP_SEV = { high:{c:'var(--t-red)',bg:'var(--t-red-bg)',bd:'var(--t-red-bd)',t:'ШҰҒЫЛ'},
+                  mid: {c:'var(--t-amber)',bg:'var(--t-amber-bg)',bd:'var(--t-amber-bd)',t:'НАЗАР'},
+                  low: {c:'var(--t-blue)',bg:'var(--t-blue-bg)',bd:'var(--t-blue-bd)',t:'МӘЛІМЕТ'} };
+
+/* ---------- көмекші ---------- */
+function _expNum(v){ const n=Number(String(v).replace(/[^\d.-]/g,'')); return isNaN(n)?0:n; }
+function _expScrq(){ return (typeof SCRQ!=='undefined' && SCRQ.lists) ? SCRQ.lists : {}; }
+function _expPeriod(){
+  if(typeof SCRQ!=='undefined' && SCRQ.period) return SCRQ.period;
+  if(typeof PSY!=='undefined'){ const k=Object.keys(PSY.months||{}).sort(); if(k.length) return k[k.length-1]; }
+  if(typeof REF!=='undefined'){ const k=Object.keys(REF.months||{}).sort(); if(k.length) return k[k.length-1]; }
+  return 'x';
+}
+/* Сыртқы бағыттардың барлық жолын бір рет қана сканерлеу (кэштеледі) */
+let _expRefCache = null;
+function _expRefScan(){
+  if(_expRefCache) return _expRefCache;
+  const out = { ttgSame:0, ttgSum:0, hba1cNoDx:0, hba1cSum:0, bloodDup:0, n:0, sum:0, byMo:{} };
+  try{
+    if(typeof refAllRows!=='function') return (_expRefCache=out);
+    const rows = refAllRows(); if(!rows.length) return (_expRefCache=out);
+    const thy={}, blood={};
+    for(const it of rows){
+      const H=it.header, R=it.row;
+      const ci=(...k)=>cmpCol(H,...k);
+      const svc=String(R[ci('Наименование услуги','наименование')]||'');
+      const sum=_expNum(R[ci('Сумма')]);
+      const iin=String(R[ci('ИИН','иин')]||'').trim();
+      const dt =String(R[ci('Дата создания','дата созд')]||'').trim();
+      const dx =String(R[ci('Диагноз')]||'');
+      const mo =String(R[ci('МО выполнившая','мо выполн')]||'').slice(0,40);
+      out.n++; out.sum+=sum;
+      if(mo){ out.byMo[mo]=(out.byMo[mo]||0)+sum; }
+      if(!iin) continue;
+      const k=iin+'|'+dt;
+      if(/тиреотропн|ТТГ/i.test(svc)){ (thy[k]=thy[k]||{}).ttg=true; }
+      if(/трийодтиронин|тироксин|тиреопероксидаз|T3|T4|а-ТПО/i.test(svc)){
+        (thy[k]=thy[k]||{}); thy[k].re=(thy[k].re||0)+1; thy[k].sum=(thy[k].sum||0)+sum; }
+      if(/гликозилированн|HbA1c/i.test(svc)){
+        if(!/E1[0-4]/i.test(dx)){ out.hba1cNoDx++; out.hba1cSum+=sum; } }
+      if(/групп[ыа] крови|резус/i.test(svc)){ blood[iin]=(blood[iin]||0)+1; }
+    }
+    Object.values(thy).forEach(v=>{ if(v.ttg && v.re){ out.ttgSame+=v.re; out.ttgSum+=(v.sum||0); } });
+    out.bloodDup = Object.values(blood).filter(v=>v>1).length;
+  }catch(e){}
+  return (_expRefCache=out);
+}
+
+/* ============================================================
+   ЕРЕЖЕЛЕР КАТАЛОГЫ
+   run() → [{key, head, evid, act, why, sev}]  немесе []
+   ============================================================ */
+const EXP_RULES = [
+
+/* ─────────── МЕЙІРГЕРЛЕРГЕ ─────────── */
+{ id:'N1', aud:'nurse', run(){
+  const L=_expScrq(); const r=L.rmzh; if(!r||!r.m45noBiopsy) return [];
+  return [{ key:`N1:${_expPeriod()}:${r.m45noBiopsy}`, sev:'high',
+    head:`Маммографияда М4–М5 шыққан ${r.m45noBiopsy} әйелде биопсия белгіленбеген`,
+    evid:`М4–М5 нәтижесі: ${ayFmt(r.m45)} әйел · оның ${ayFmt(r.m45noBiopsy)}-інде «Трепанобиопсия» бағаны бос. Дереккөз: «Скрининг РМЖ — список».`,
+    act:'Әрқайсысын бір-бірлеп тексеру: биопсия жасалған ба? Жасалған болса — нәтижесін жүйеге енгізу. Жасалмаған болса — бүгін онкологқа жолдама.',
+    why:'М4–М5 — қатерлі ісікке күдік. «Белгі жоқ» дегені «жасалмаған» дегенді білдірмейді, бірақ ол тексерілуі МІНДЕТТІ.' }];
+}},
+
+{ id:'N2', aud:'nurse', run(){
+  const L=_expScrq(); const det=Object.values(L).reduce((a,o)=>a+(o.detect||0),0);
+  const tod=Object.values(L).reduce((a,o)=>a+(o.toD||0),0);
+  if(!det || tod>=det*0.6) return [];
+  return [{ key:`N2:${_expPeriod()}:${det}-${tod}`, sev:'high',
+    head:`Скринингте ${det} адамда патология анықталды, Д-есепке алынғаны — ${tod}`,
+    evid:`«Выявлено» ${ayFmt(det)} · «Взято на Д-учет по выявлению» ${ayFmt(tod)} (${det?Math.round(tod/det*100):0}%).`,
+    act:'Анықталған әр адамның тағдырын анықтау: Д-есепке алынды ма, әлде бақылаусыз қалды ма. Алынбағандарын дәрігерге беру.',
+    why:'Скринингтің мәні — табу емес, табылғанды бақылауға алу. Табылып, есепке алынбаған адам — скринингтің толық жоғалуы.' }];
+}},
+
+{ id:'N3', aud:'nurse', run(){
+  const L=_expScrq(); const out=[];
+  Object.values(L).forEach(o=>{
+    if(!o.total || !o.notDone) return;
+    const pct = o.notDone/o.total;
+    if(pct < 0.25) return;
+    out.push({ key:`N3:${_expPeriod()}:${o.name}:${o.notDone}`, sev: pct>0.5?'high':'mid',
+      head:`${o.name} — бастаған ${ayFmt(o.total)} адамның ${ayFmt(o.notDone)}-і аяқтамаған (${Math.round(pct*100)}%)`,
+      evid:`Аяқтаған ${ayFmt(o.done)} · аяқтамаған ${ayFmt(o.notDone)} · бас тартқан ${ayFmt(o.refuse||0)}.`,
+      act:'Аяқтамағандарды учаске бойынша бөліп, себебін анықтау. Себеп кодын жазу — кейін жүйелі шешім осыдан шығады.',
+      why:'Басталып аяқталмаған скрининг — ақша да, уақыт та жұмсалып, нәтиже алынбаған жағдай. Ол «жасалмағаннан» қымбат.' });
+  });
+  return out;
+}},
+
+{ id:'N4', aud:'nurse', run(){
+  if(typeof NOSVC==='undefined' || !NOSVC.total || !NOSVC.noPhone) return [];
+  const pct = NOSVC.noPhone/NOSVC.total;
+  if(pct < 0.15) return [];
+  return [{ key:`N4:${NOSVC.period||'x'}:${NOSVC.noPhone}`, sev:'mid',
+    head:`Қызмет алмағандардың ${ayFmt(NOSVC.noPhone)}-інде телефон жоқ (${Math.round(pct*100)}%)`,
+    evid:`Барлығы ${ayFmt(NOSVC.total)} адам · байланыс дерегі жоқ ${ayFmt(NOSVC.noPhone)}.`,
+    act:'Бұларға қоңырау шалу мүмкін емес — учаске аралау тізіміне бөлек шығару. Табылған нөмірлерді регистратураға беру.',
+    why:'Телефонсыз адамды қоңырау тізімінде ұстау — жалған жұмыс жинайды: мейіргер өткізіп жібереді, жүйе «өңделмеген» деп санай береді.' }];
+}},
+
+{ id:'N5', aud:'nurse', run(){
+  // Қамту есептелмей тұрып тізім берудің ҚАУПІ
+  if(typeof SCR==='undefined' || !SCR.people || !SCR.people.size) return [];
+  let due=0, done=0;
+  try{ const res=scrCompute(); res.forEach(o=>{ due+=(o.due||0); done+=(o.done||0); }); }catch(e){ return []; }
+  if(done>0 || !due) return [];
+  return [{ key:`N5:${_expPeriod()}:${due}`, sev:'high',
+    head:`⚠️ Скрининг қамтуы 0% — тізімді мейіргерге БЕРУГЕ БОЛМАЙДЫ`,
+    evid:`Нысаналы топта ${ayFmt(due)} адам «мерзімі жеткен» болып тұр, ал «өткен» — 0. Бұл клиникалық шындық емес, дерек жетіспеушілігі.`,
+    act:'«Скрининг РМЖ / РШМ / КРР — список» файлдарын халық тізімімен БІРГЕ жүктеу. Журналда «🔗 қамтуға белгіленді» жазуы шығуы керек. Содан кейін ғана ботқа жіберу.',
+    why:'Ісінген тізім мейіргердің сеніміне бір рет қана нұқсан келтіреді — содан кейін ол құралды мүлдем ашпайды.' }];
+}},
+
+/* ─────────── ДӘРІГЕРЛЕРГЕ ─────────── */
+{ id:'D1', aud:'doctor', run(){
+  const a=_expRefScan(); if(a.ttgSame<10) return [];
+  return [{ key:`D1:${_expPeriod()}:${a.ttgSame}`, sev:'mid',
+    head:`ТТГ-мен ДӘЛ БІР КҮНІ жіберілген T3/T4/а-ТПО — ${ayFmt(a.ttgSame)} жолдама`,
+    evid:`Сомасы шамамен ${ayFmt(a.ttgSum,0)} тг. Бір пациент, бір күн, ТТГ + қосымша қалқанша анализі.`,
+    act:'Қалқанша безі тексеруінің тәртібін бекіту: алдымен ТТГ, нәтижесі ауытқыса ғана T3/T4/а-ТПО.',
+    why:'Reflex-тәртіпте қосымша анализ ТТГ жауабынан КЕЙІН тағайындалады. Бір күні жіберілуі — жауап көрілмегенін білдіреді.' }];
+}},
+
+{ id:'D2', aud:'doctor', run(){
+  const a=_expRefScan(); if(a.hba1cNoDx<10) return [];
+  return [{ key:`D2:${_expPeriod()}:${a.hba1cNoDx}`, sev:'low',
+    head:`Диабет диагнозы көрсетілмеген HbA1c — ${ayFmt(a.hba1cNoDx)} жолдама`,
+    evid:`Сомасы шамамен ${ayFmt(a.hba1cSum,0)} тг. Диагноз өрісінде E10–E14 коды жоқ.`,
+    act:'Екеуінің бірі: не диагнозды дұрыс кодтау, не скринингтік мақсатта тағайындау негізін нақтылау.',
+    why:'Диагнозсыз тағайындалған анализ тексеру кезінде негізсіз деп танылуы мүмкін — қаржылық тәуекел.' }];
+}},
+
+{ id:'D3', aud:'doctor', run(){
+  const a=_expRefScan(); if(a.bloodDup<5) return [];
+  return [{ key:`D3:${_expPeriod()}:${a.bloodDup}`, sev:'low',
+    head:`Қан тобы / резус қайталап тапсырылған — ${ayFmt(a.bloodDup)} пациент`,
+    evid:`Бір пациентке бірнеше рет тапсырылған.`,
+    act:'Нәтижені амбулаториялық картаның тұрақты бетіне енгізу, қайта тағайындауды жабу.',
+    why:'Қан тобы мен резус өмір бойы өзгермейді. Қайталау — таза ысырап.' }];
+}},
+
+{ id:'D4', aud:'doctor', run(){
+  if(typeof PROF==='undefined') return [];
+  const ks=Object.keys(PROF.months||{}).sort(); if(!ks.length) return [];
+  const M=PROF.months[ks[ks.length-1]]; if(!M||!M.uchastki) return [];
+  const bad=M.uchastki.filter(u=>u.age65 && (u.age65obs/u.age65)<0.5);
+  if(!bad.length) return [];
+  return [{ key:`D4:${ks[ks.length-1]}:${bad.length}`, sev:'mid',
+    head:`65+ жастағы халықты бақылау ${bad.length} учаскеде 50%-дан төмен`,
+    evid: bad.slice(0,5).map(u=>`${u.name}: ${ayFmt(u.age65obs)}/${ayFmt(u.age65)} (${Math.round(u.age65obs/u.age65*100)}%)`).join(' · '),
+    act:'Осы учаскелердің дәрігерлерімен жеке қарау: жоспар бар ма, кім бақылаудан тыс қалған.',
+    why:'65+ — ең жоғары тәуекел тобы әрі КПН көрсеткіштеріне тікелей әсер етеді.' }];
+}},
+
+/* ─────────── БАСШЫЛЫҚҚА ─────────── */
+{ id:'M1', aud:'boss', run(){
+  const a=_expRefScan(); if(!a.sum) return [];
+  const top=Object.entries(a.byMo).sort((x,y)=>y[1]-x[1]).slice(0,3);
+  if(!top.length) return [];
+  const share = top[0][1]/a.sum;
+  if(share < 0.25) return [];
+  return [{ key:`M1:${_expPeriod()}:${Math.round(top[0][1])}`, sev:'mid',
+    head:`Сыртқа кететін қаржының ${Math.round(share*100)}%-ы бір мекемеге кетеді`,
+    evid: top.map(([k,v])=>`${k} — ${ayFmt(v,0)} тг`).join(' · ') + ` · барлығы ${ayFmt(a.sum,0)} тг`,
+    act:'Ең көп кететін қызмет түрлерін бөліп алып, өз базамызда жасау құнымен салыстыру. Немесе көлемге қарай баға талқылау.',
+    why:'Бір жеткізушіге тәуелділік — баға талқылауда әлсіз позиция.' }];
+}},
+
+{ id:'M2', aud:'boss', run(){
+  if(typeof NOSVC==='undefined' || !NOSVC.total) return [];
+  return [{ key:`M2:${NOSVC.period||'x'}:${NOSVC.total}`, sev:'mid',
+    head:`${ayFmt(NOSVC.total)} тіркелген адам есепті кезеңде бірде-бір қызмет алмаған`,
+    evid:`Байланыс дерегі жоқ: ${ayFmt(NOSVC.noPhone||0)}.`,
+    act:'КПН тұрғысынан бағалау: бұл адамдар үшін қаржы келеді, ал қызмет көрсетілмейді. Учаске бойынша бөліп, жоспар қою.',
+    why:'Қызмет алмаған тіркелген халық — КПН тиімділігінің ең үлкен резерві әрі ең үлкен тәуекелі.' }];
+}},
+
+{ id:'M3', aud:'boss', run(){
+  if(typeof WORK==='undefined' || !WORK.doc) return [];
+  const d=Object.entries(WORK.doc||{}); if(d.length<3) return [];
+  const vals=d.map(x=>_expNum(x[1].total||x[1]||0)).filter(v=>v>0);
+  if(vals.length<3) return [];
+  const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+  const low=vals.filter(v=>v<avg*0.5).length;
+  if(!low) return [];
+  return [{ key:`M3:${_expPeriod()}:${low}`, sev:'low',
+    head:`${low} дәрігердің жүктемесі орташадан 2 есе төмен`,
+    evid:`Орташа ${Math.round(avg)} қабылдау · осы деңгейден төмен ${low} маман.`,
+    act:'Себебін нақтылау: жұмыс кестесі ме, кодтау ма, әлде нақты жүктеме теңсіздігі ме.',
+    why:'Жүктеме теңсіздігі — қызмет көлемінің де, еңбекақы әділдігінің де мәселесі.' }];
+}},
+
+{ id:'M4', aud:'boss', run(){
+  const L=_expScrq(); const names=Object.keys(L); if(!names.length) return [];
+  const tot=Object.values(L).reduce((a,o)=>a+(o.total||0),0);
+  const done=Object.values(L).reduce((a,o)=>a+(o.done||0),0);
+  if(!tot) return [];
+  const pct=Math.round(done/tot*100);
+  if(pct>=70) return [];
+  return [{ key:`M4:${_expPeriod()}:${pct}`, sev: pct<40?'high':'mid',
+    head:`Барлық скрининг бойынша аяқтау деңгейі — ${pct}%`,
+    evid:`Бастаған ${ayFmt(tot)} · аяқтаған ${ayFmt(done)}. ${names.length} скрининг бағдарламасы бойынша.`,
+    act:'Аяқтау деңгейін учаске бойынша бөліп, ең төмен екеуінің жұмыс тәртібін жеке қарау.',
+    why:'Қаржыландыру аяқталған скринингке байланысты. Бастау — шығын, аяқтау — кіріс.' }];
+}},
+
+{ id:'M5', aud:'boss', run(){
+  if(typeof POP==='undefined' || !POP.people || !POP.people.size) return [];
+  let noTel=0;
+  POP.people.forEach(p=>{ if(!p.hasTel) noTel++; });
+  const pct=noTel/POP.people.size;
+  if(pct<0.15) return [];
+  return [{ key:`M5:${POP.asOf||'x'}:${noTel}`, sev:'mid',
+    head:`Тіркелген халықтың ${Math.round(pct*100)}%-ында телефон жоқ (${ayFmt(noTel)} адам)`,
+    evid:`Барлығы ${ayFmt(POP.people.size)} адам.`,
+    act:'Регистратураға тұрақты тапсырма: әр келген пациенттің нөмірін тексеру. Ай сайын өлшеу.',
+    why:'Байланыс дерегі — скрининг, диспансерлеу, шақырту жұмысының БАЗАСЫ. Онсыз қалған бәрі істемейді.' }];
+}},
+];
+
+/* ============================================================
+   ЕСЕПТЕУ МЕН КӨРСЕТУ
+   ============================================================ */
+function expCompute(){
+  _expRefCache = null;                      // жаңа деректе қайта сканерлеу
+  const out=[];
+  EXP_RULES.forEach(r=>{
+    try{ (r.run()||[]).forEach(f=>{ f.aud=r.aud; f.rule=r.id; out.push(f); }); }
+    catch(e){ /* бір ереже құласа қалғаны жұмыс істей берсін */ }
+  });
+  EXP.findings=out; EXP.ts=new Date();
+  return out;
+}
+
+function expSetTab(t){ EXP.tab=t; expRender(); }
+
+function expRender(){
+  const box=document.getElementById('expReport'); if(!box) return;
+  const arch=expArchLoad();
+  const all=EXP.findings.length?EXP.findings:expCompute();
+  const cnt={nurse:0,doctor:0,boss:0};
+  all.forEach(f=>{ if(!arch[f.key]) cnt[f.aud]++; });
+
+  const tabs=[['nurse','👩‍⚕️ Мейіргерлерге'],['doctor','🩺 Дәрігерлерге'],['boss','💼 Басшылыққа']];
+  let h='<div class="lens-bar">'
+    + tabs.map(([k,l])=>`<button type="button" class="lens-btn${EXP.tab===k?' on':''}" onclick="expSetTab('${k}')">${l} (${cnt[k]})</button>`).join('')
+    + `<div class="lens-note">Соңғы есептеу: ${EXP.ts?EXP.ts.toLocaleString('ru-RU'):'—'} · «Орындалды» → мұрағат</div></div>`;
+
+  const act=all.filter(f=>f.aud===EXP.tab && !arch[f.key]);
+  const arc=all.filter(f=>f.aud===EXP.tab &&  arch[f.key]);
+
+  if(!act.length){
+    h+=`<div class="card"><div style="padding:8px;font-size:13px;color:var(--ink-3)">
+      ${arc.length? '✅ Бұл бөлім бойынша ашық қорытынды жоқ — барлығы орындалды.'
+                  : 'Дерек жеткіліксіз немесе қорытынды табылмады. Тиісті бөлімдерге выгрузка жүктеңіз.'}
+    </div></div>`;
+  }
+  const rank={high:0,mid:1,low:2};
+  act.sort((a,b)=>rank[a.sev]-rank[b.sev]);
+  act.forEach(f=>{
+    const S=EXP_SEV[f.sev]||EXP_SEV.low;
+    h+=`<div class="card" style="border-color:${S.bd};background:${S.bg}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="font-family:-apple-system,sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;color:${S.c};margin-bottom:5px">${S.t} · ${f.rule}</div>
+          <div style="font-size:15px;font-weight:600;line-height:1.35;margin-bottom:8px">${f.head}</div>
+          <div style="font-size:12.5px;color:var(--ink-2);margin-bottom:8px">${f.evid}</div>
+          <div style="font-size:13px;background:var(--t-overlay);border-left:3px solid ${S.c};padding:8px 11px;border-radius:0 6px 6px 0;margin-bottom:7px">
+            <strong>➡️ Не істеу керек:</strong> ${f.act}</div>
+          <div style="font-size:11.5px;color:var(--ink-3);font-style:italic">💡 ${f.why}</div>
+        </div>
+        <button class="icon-btn" onclick="expDone('${f.key.replace(/'/g,"\\'")}')"
+                style="font-size:12px;white-space:nowrap">✅ Орындалды</button>
+      </div></div>`;
+  });
+
+  if(arc.length){
+    h+=`<div class="card"><div class="card-title">🗄 Мұрағат — ${arc.length}</div>`;
+    arc.forEach(f=>{
+      const t=arch[f.key]&&arch[f.key].ts?new Date(arch[f.key].ts).toLocaleDateString('ru-RU'):'';
+      h+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;
+                      padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-3)">
+        <span>${f.head}</span>
+        <span style="white-space:nowrap"><span style="margin-right:8px">${t}</span>
+        <button class="icon-btn" onclick="expUndo('${f.key.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 8px">↩︎ Қайтару</button></span>
+      </div>`;
+    });
+    h+=`<div style="margin-top:10px"><button class="icon-btn" onclick="expClearArch()" style="font-size:11px">🗑 Мұрағатты тазалау</button></div></div>`;
+  }
+  box.innerHTML=h;
+}
+
+function expRefresh(){ expCompute(); expRender(); }
+
 
 /* ============================================================
    🔭 ЛИНЗА — бір деректі екі тілде оқу (v15.6)
