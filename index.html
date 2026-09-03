@@ -670,7 +670,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.3</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.4</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn" id="themeBtn" title="Ашық / күңгірт фон" onclick="ayToggleTheme()">🌙</button>
@@ -1032,7 +1032,8 @@
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
       <button class="icon-btn primary" onclick="expRefresh()" style="font-size:12.5px">🔄 Жаңарту</button>
-      <span style="font-size:11.5px;color:var(--ink-3)">Выгрузка жүктелген сайын да автоматты қайта есептеледі</span>
+      <span id="expFlash" style="font-size:11.5px"></span>
+      <span style="font-size:11.5px;color:var(--ink-3);margin-left:auto">Выгрузка жүктелген сайын да автоматты қайта есептеледі</span>
     </div>
     <div id="expReport"></div>
   </section>
@@ -7025,12 +7026,88 @@ function _expRefScan(){
    ЕРЕЖЕЛЕР КАТАЛОГЫ
    run() → [{key, head, evid, act, why, sev}]  немесе []
    ============================================================ */
+/* ============================================================
+   🗄 СЕРВЕРЛІК ДЕРЕК ҚАБАТЫ (v16.4)
+   ------------------------------------------------------------
+   ⚠️ БҰРЫНҒЫ ҚАТЕ: эксперт ережелері ТЕК браузерге жүктелген
+      файлдан оқитын (SCRQ, SCR, NOSVC, POP, PROF). Ал әдеттегі
+      жағдайда файл жүктелмеген — серверде агрегат тұрса да.
+      Сондықтан бөлім бос болып, «Жаңарту» өлі көрінетін.
+   ЕНДІ: тірі дерек болса — сол, болмаса СЕРВЕРДЕГІ агрегат.
+   ============================================================ */
+function _expN(v){ if(v===''||v===null||v===undefined) return 0;
+  const n=Number(String(v).replace(/[^\d.-]/g,'')); return isNaN(n)?0:n; }
+
+function _expSrvRows(name){
+  try{
+    const r = (typeof SERVER_DATA!=='undefined' && SERVER_DATA && SERVER_DATA[name]) || [];
+    return r.slice().filter(x=>x && x.period)
+            .sort((a,b)=>String(a.period).localeCompare(String(b.period)));
+  }catch(e){ return []; }
+}
+function _expSrvLast(name){ const r=_expSrvRows(name); return r.length?r[r.length-1]:null; }
+function _expSrvPrev(name){ const r=_expSrvRows(name); return r.length>1?r[r.length-2]:null; }
+
+/* Скрининг: тірі SCRQ → әйтпесе clin_scr */
+function _expScr(){
+  try{
+    if(typeof SCRQ!=='undefined' && SCRQ.lists && Object.keys(SCRQ.lists).length){
+      const L=Object.values(SCRQ.lists);
+      const s=f=>L.reduce((a,o)=>a+(o[f]||0),0);
+      return { src:'файл', period:SCRQ.period||'', total:s('total'), done:s('done'),
+               notdone:s('notDone'), detect:s('detect'), tod:s('toD'),
+               m45nb:s('m45noBiopsy'), m45:s('m45'), lists:L };
+    }
+  }catch(e){}
+  const r=_expSrvLast('clin_scr');
+  if(!r) return null;
+  return { src:'сервер', period:r.period, total:_expN(r.total), done:_expN(r.done),
+           notdone:_expN(r.notdone), detect:_expN(r.detect), tod:_expN(r.tod),
+           m45nb:_expN(r.m45nb), m45:0, lists:[] };
+}
+/* Қызмет алмағандар */
+function _expNosvc(){
+  try{ if(typeof NOSVC!=='undefined' && NOSVC.total)
+    return { src:'файл', period:NOSVC.period||'', total:NOSVC.total,
+             unreach:NOSVC.noPhone||0, kids04:0, eld65:0 }; }catch(e){}
+  const r=_expSrvLast('clin_nosvc');
+  if(!r) return null;
+  return { src:'сервер', period:r.period, total:_expN(r.total), unreach:_expN(r.unreach),
+           kids04:_expN(r.kids04), eld65:_expN(r.eld65) };
+}
+/* Халық профилі */
+function _expPop(){
+  try{ if(typeof POP!=='undefined' && POP.people && POP.people.size){
+    let nt=0; POP.people.forEach(p=>{ if(!p.hasTel) nt++; });
+    return { src:'файл', period:POP.asOf||'', total:POP.people.size, notel:nt }; } }catch(e){}
+  const r=_expSrvLast('clin_pop');
+  if(!r) return null;
+  return { src:'сервер', period:r.period, total:_expN(r.total), notel:_expN(r.notel) };
+}
+/* Профилактика */
+function _expProf(){
+  try{ if(typeof PROF!=='undefined'){
+    const ks=Object.keys(PROF.months||{}).sort();
+    if(ks.length){ const M=PROF.months[ks[ks.length-1]];
+      if(M && M.uchastki && M.uchastki.length){
+        const s=f=>M.uchastki.reduce((a,u)=>a+(u[f]||0),0);
+        return { src:'файл', period:ks[ks.length-1], total:s('total'), dyn:s('dynObs'),
+                 age65:s('age65'), age65obs:s('age65obs'), jfv:s('jfv'), jfvobs:s('jfvObs'),
+                 uchastki:M.uchastki }; } } } }catch(e){}
+  const r=_expSrvLast('clin_prof');
+  if(!r) return null;
+  return { src:'сервер', period:r.period, total:_expN(r.total), dyn:_expN(r.dyn),
+           age65:_expN(r.age65), age65obs:_expN(r.age65obs),
+           jfv:_expN(r.jfv), jfvobs:_expN(r.jfvobs), uchastki:[] };
+}
+
 const EXP_RULES = [
 
 /* ─────────── МЕЙІРГЕРЛЕРГЕ ─────────── */
 { id:'N1', aud:'nurse', run(){
-  const L=_expScrq(); const r=L.rmzh; if(!r||!r.m45noBiopsy) return [];
-  return [{ key:`N1:${_expPeriod()}:${r.m45noBiopsy}`, sev:'high',
+  const s=_expScr(); if(!s||!s.m45nb) return [];
+  const r={m45:s.m45||s.m45nb, m45noBiopsy:s.m45nb};
+  return [{ key:`N1:${s.period||_expPeriod()}:${r.m45noBiopsy}`, sev:'high',
     head:`Маммографияда М4–М5 шыққан ${r.m45noBiopsy} әйелде биопсия белгіленбеген`,
     evid:`М4–М5 нәтижесі: ${ayFmt(r.m45)} әйел · оның ${ayFmt(r.m45noBiopsy)}-інде «Трепанобиопсия» бағаны бос. Дереккөз: «Скрининг РМЖ — список».`,
     act:'Әрқайсысын бір-бірлеп тексеру: биопсия жасалған ба? Жасалған болса — нәтижесін жүйеге енгізу. Жасалмаған болса — бүгін онкологқа жолдама.',
@@ -7038,10 +7115,10 @@ const EXP_RULES = [
 }},
 
 { id:'N2', aud:'nurse', run(){
-  const L=_expScrq(); const det=Object.values(L).reduce((a,o)=>a+(o.detect||0),0);
-  const tod=Object.values(L).reduce((a,o)=>a+(o.toD||0),0);
+  const s=_expScr(); if(!s) return [];
+  const det=s.detect, tod=s.tod;
   if(!det || tod>=det*0.6) return [];
-  return [{ key:`N2:${_expPeriod()}:${det}-${tod}`, sev:'high',
+  return [{ key:`N2:${s.period||_expPeriod()}:${det}-${tod}`, sev:'high',
     head:`Скринингте ${det} адамда патология анықталды, Д-есепке алынғаны — ${tod}`,
     evid:`«Выявлено» ${ayFmt(det)} · «Взято на Д-учет по выявлению» ${ayFmt(tod)} (${det?Math.round(tod/det*100):0}%).`,
     act:'Анықталған әр адамның тағдырын анықтау: Д-есепке алынды ма, әлде бақылаусыз қалды ма. Алынбағандарын дәрігерге беру.',
@@ -7064,12 +7141,12 @@ const EXP_RULES = [
 }},
 
 { id:'N4', aud:'nurse', run(){
-  if(typeof NOSVC==='undefined' || !NOSVC.total || !NOSVC.noPhone) return [];
-  const pct = NOSVC.noPhone/NOSVC.total;
+  const n=_expNosvc(); if(!n || !n.total || !n.unreach) return [];
+  const pct = n.unreach/n.total;
   if(pct < 0.15) return [];
-  return [{ key:`N4:${NOSVC.period||'x'}:${NOSVC.noPhone}`, sev:'mid',
-    head:`Қызмет алмағандардың ${ayFmt(NOSVC.noPhone)}-інде телефон жоқ (${Math.round(pct*100)}%)`,
-    evid:`Барлығы ${ayFmt(NOSVC.total)} адам · байланыс дерегі жоқ ${ayFmt(NOSVC.noPhone)}.`,
+  return [{ key:`N4:${n.period||'x'}:${n.unreach}`, sev:'mid',
+    head:`Қызмет алмағандардың ${ayFmt(n.unreach)}-інде телефон жоқ (${Math.round(pct*100)}%)`,
+    evid:`Барлығы ${ayFmt(n.total)} адам · байланыс дерегі жоқ ${ayFmt(n.unreach)}. Дереккөз: ${n.src}.`,
     act:'Бұларға қоңырау шалу мүмкін емес — учаске аралау тізіміне бөлек шығару. Табылған нөмірлерді регистратураға беру.',
     why:'Телефонсыз адамды қоңырау тізімінде ұстау — жалған жұмыс жинайды: мейіргер өткізіп жібереді, жүйе «өңделмеген» деп санай береді.' }];
 }},
@@ -7116,14 +7193,17 @@ const EXP_RULES = [
 }},
 
 { id:'D4', aud:'doctor', run(){
-  if(typeof PROF==='undefined') return [];
-  const ks=Object.keys(PROF.months||{}).sort(); if(!ks.length) return [];
-  const M=PROF.months[ks[ks.length-1]]; if(!M||!M.uchastki) return [];
-  const bad=M.uchastki.filter(u=>u.age65 && (u.age65obs/u.age65)<0.5);
-  if(!bad.length) return [];
-  return [{ key:`D4:${ks[ks.length-1]}:${bad.length}`, sev:'mid',
-    head:`65+ жастағы халықты бақылау ${bad.length} учаскеде 50%-дан төмен`,
-    evid: bad.slice(0,5).map(u=>`${u.name}: ${ayFmt(u.age65obs)}/${ayFmt(u.age65)} (${Math.round(u.age65obs/u.age65*100)}%)`).join(' · '),
+  const pf=_expProf(); if(!pf || !pf.age65) return [];
+  const bad=(pf.uchastki||[]).filter(u=>u.age65 && (u.age65obs/u.age65)<0.5);
+  const gpct=Math.round(pf.age65obs/pf.age65*100);
+  if(!bad.length && gpct>=50) return [];
+  return [{ key:`D4:${pf.period||'x'}:${bad.length||gpct}`, sev:'mid',
+    head: bad.length
+      ? `65+ жастағы халықты бақылау ${bad.length} учаскеде 50%-дан төмен`
+      : `65+ жастағы халықты бақылау — ${gpct}% (50%-дан төмен)`,
+    evid: (bad.length
+      ? bad.slice(0,5).map(u=>`${u.name}: ${ayFmt(u.age65obs)}/${ayFmt(u.age65)} (${Math.round(u.age65obs/u.age65*100)}%)`).join(' · ')
+      : `Бақылауда ${ayFmt(pf.age65obs)} / ${ayFmt(pf.age65)}`) + ` · дереккөз: ${pf.src}`,
     act:'Осы учаскелердің дәрігерлерімен жеке қарау: жоспар бар ма, кім бақылаудан тыс қалған.',
     why:'65+ — ең жоғары тәуекел тобы әрі КПН көрсеткіштеріне тікелей әсер етеді.' }];
 }},
@@ -7143,10 +7223,12 @@ const EXP_RULES = [
 }},
 
 { id:'M2', aud:'boss', run(){
-  if(typeof NOSVC==='undefined' || !NOSVC.total) return [];
-  return [{ key:`M2:${NOSVC.period||'x'}:${NOSVC.total}`, sev:'mid',
-    head:`${ayFmt(NOSVC.total)} тіркелген адам есепті кезеңде бірде-бір қызмет алмаған`,
-    evid:`Байланыс дерегі жоқ: ${ayFmt(NOSVC.noPhone||0)}.`,
+  const n=_expNosvc(); if(!n || !n.total) return [];
+  return [{ key:`M2:${n.period||'x'}:${n.total}`, sev:'mid',
+    head:`${ayFmt(n.total)} тіркелген адам есепті кезеңде бірде-бір қызмет алмаған`,
+    evid:`Байланыс дерегі жоқ: ${ayFmt(n.unreach||0)}`
+      + (n.kids04?` · 0–4 жас: ${ayFmt(n.kids04)}`:'')
+      + (n.eld65?` · 65+: ${ayFmt(n.eld65)}`:'') + `. Дереккөз: ${n.src}.`,
     act:'КПН тұрғысынан бағалау: бұл адамдар үшін қаржы келеді, ал қызмет көрсетілмейді. Учаске бойынша бөліп, жоспар қою.',
     why:'Қызмет алмаған тіркелген халық — КПН тиімділігінің ең үлкен резерві әрі ең үлкен тәуекелі.' }];
 }},
@@ -7167,28 +7249,23 @@ const EXP_RULES = [
 }},
 
 { id:'M4', aud:'boss', run(){
-  const L=_expScrq(); const names=Object.keys(L); if(!names.length) return [];
-  const tot=Object.values(L).reduce((a,o)=>a+(o.total||0),0);
-  const done=Object.values(L).reduce((a,o)=>a+(o.done||0),0);
-  if(!tot) return [];
-  const pct=Math.round(done/tot*100);
+  const s=_expScr(); if(!s || !s.total) return [];
+  const pct=Math.round(s.done/s.total*100);
   if(pct>=70) return [];
-  return [{ key:`M4:${_expPeriod()}:${pct}`, sev: pct<40?'high':'mid',
+  return [{ key:`M4:${s.period||_expPeriod()}:${pct}`, sev: pct<40?'high':'mid',
     head:`Барлық скрининг бойынша аяқтау деңгейі — ${pct}%`,
-    evid:`Бастаған ${ayFmt(tot)} · аяқтаған ${ayFmt(done)}. ${names.length} скрининг бағдарламасы бойынша.`,
+    evid:`Бастаған ${ayFmt(s.total)} · аяқтаған ${ayFmt(s.done)}. Дереккөз: ${s.src}.`,
     act:'Аяқтау деңгейін учаске бойынша бөліп, ең төмен екеуінің жұмыс тәртібін жеке қарау.',
     why:'Қаржыландыру аяқталған скринингке байланысты. Бастау — шығын, аяқтау — кіріс.' }];
 }},
 
 { id:'M5', aud:'boss', run(){
-  if(typeof POP==='undefined' || !POP.people || !POP.people.size) return [];
-  let noTel=0;
-  POP.people.forEach(p=>{ if(!p.hasTel) noTel++; });
-  const pct=noTel/POP.people.size;
+  const pp=_expPop(); if(!pp || !pp.total || !pp.notel) return [];
+  const pct=pp.notel/pp.total;
   if(pct<0.15) return [];
-  return [{ key:`M5:${POP.asOf||'x'}:${noTel}`, sev:'mid',
-    head:`Тіркелген халықтың ${Math.round(pct*100)}%-ында телефон жоқ (${ayFmt(noTel)} адам)`,
-    evid:`Барлығы ${ayFmt(POP.people.size)} адам.`,
+  return [{ key:`M5:${pp.period||'x'}:${pp.notel}`, sev:'mid',
+    head:`Тіркелген халықтың ${Math.round(pct*100)}%-ында телефон жоқ (${ayFmt(pp.notel)} адам)`,
+    evid:`Барлығы ${ayFmt(pp.total)} адам. Дереккөз: ${pp.src}.`,
     act:'Регистратураға тұрақты тапсырма: әр келген пациенттің нөмірін тексеру. Ай сайын өлшеу.',
     why:'Байланыс дерегі — скрининг, диспансерлеу, шақырту жұмысының БАЗАСЫ. Онсыз қалған бәрі істемейді.' }];
 }},
@@ -7197,6 +7274,166 @@ const EXP_RULES = [
 /* ============================================================
    ЕСЕПТЕУ МЕН КӨРСЕТУ
    ============================================================ */
+/* ============================================================
+   📅 АЙЛЫҚ КЛИНИКАЛЫҚ ЕСЕП (v16.4)
+   ------------------------------------------------------------
+   Серверде сақталған кезеңдерді салыстырады: соңғы ай ↔ алдыңғы ай.
+   Дерек ЖҮКТЕУДІҢ ҚАЖЕТІ ЖОҚ — бәрі серверлік агрегаттан.
+
+   БАСЫМДЫҚ РЕТІ (менің ұсынысым, клиникалық құндылық бойынша):
+     1. Анықталды → Д-есепке конверсиясы  ← скринингтің БАСТЫ мәні
+     2. М4-М5 биопсиясыз                  ← онкологиялық қауіпсіздік
+     3. Скрининг аяқтау деңгейі           ← бастау шығын, аяқтау кіріс
+     4. 65+ бақылауы                      ← ең жоғары тәуекел тобы
+     5. Д-есеп қамтуы
+     6. 0–4 жас қызмет алмағандар         ← ең қауіпті олқылық
+     7. 65+ қызмет алмағандар
+     8. Кодтау қатесі                     ← құжаттау сапасы
+   Экономикалық көрсеткіштер соңында — олар «Басшылыққа» табында бар.
+   ============================================================ */
+const EXP_MET = [
+  { id:'conv',  name:'Анықталды → Д-есепке алынды', sheet:'clin_scr',
+    calc:r=>({num:_expN(r.tod), den:_expN(r.detect)}), kind:'pct', good:'up',
+    why:'Скринингтің мәні — табу емес, табылғанды бақылауға алу.' },
+  { id:'m45',   name:'М4–М5 биопсиясыз', sheet:'clin_scr',
+    calc:r=>({num:_expN(r.m45nb)}), kind:'abs', good:'down',
+    why:'Қатерлі ісікке күдік. Нөл болуы тиіс.' },
+  { id:'scrdone',name:'Скрининг аяқтау деңгейі', sheet:'clin_scr',
+    calc:r=>({num:_expN(r.done), den:_expN(r.total)}), kind:'pct', good:'up',
+    why:'Қаржыландыру аяқталған скринингке байланысты.' },
+  { id:'a65',   name:'65+ бақылауға алынғаны', sheet:'clin_prof',
+    calc:r=>({num:_expN(r.age65obs), den:_expN(r.age65)}), kind:'pct', good:'up',
+    why:'Ең жоғары тәуекел тобы, әрі КПН индикаторы.' },
+  { id:'dyn',   name:'Д-есеп қамтуы', sheet:'clin_prof',
+    calc:r=>({num:_expN(r.dyn), den:_expN(r.total)}), kind:'pct', good:'up',
+    why:'Созылмалы науқастардың бақылауда болуы.' },
+  { id:'jfv',   name:'Жүкті/фертильді жас бақылауы', sheet:'clin_prof',
+    calc:r=>({num:_expN(r.jfvobs), den:_expN(r.jfv)}), kind:'pct', good:'up',
+    why:'Ана мен бала қауіпсіздігі.' },
+  { id:'kids',  name:'0–4 жас, қызмет алмағандар', sheet:'clin_nosvc',
+    calc:r=>({num:_expN(r.kids04)}), kind:'abs', good:'down',
+    why:'Патронаж міндетті — бұл топта олқылық болмауы керек.' },
+  { id:'eld',   name:'65+, қызмет алмағандар', sheet:'clin_nosvc',
+    calc:r=>({num:_expN(r.eld65)}), kind:'abs', good:'down',
+    why:'Жоғары тәуекел тобы бақылаудан тыс.' },
+  { id:'nosvc', name:'Қызмет алмағандар (барлығы)', sheet:'clin_nosvc',
+    calc:r=>({num:_expN(r.total)}), kind:'abs', good:'down',
+    why:'КПН тиімділігінің басты резерві.' },
+  { id:'notel', name:'Байланыс дерегі жоқтар', sheet:'clin_pop',
+    calc:r=>({num:_expN(r.notel), den:_expN(r.total)}), kind:'pct', good:'down',
+    why:'Скрининг, диспансерлеу, шақырту — бәрінің базасы.' },
+  { id:'err',   name:'Кодтау қатесі (төлем жүйесі)', sheet:'audit_psy',
+    calc:r=>({num:_expN(r.err_n), den:_expN(r.total)}), kind:'pct', good:'down',
+    why:'Құжаттау сапасы әрі тікелей қаржы жоғалту.' },
+  { id:'home',  name:'Үйдегі қабылдау үлесі', sheet:'clin_work',
+    calc:r=>({num:_expN(r.home), den:_expN(r.home)+_expN(r.clinic)}), kind:'pct', good:'up',
+    why:'Белсенді патронаж жұмысының көрсеткіші.' },
+  { id:'refsum',name:'Сыртқа кеткен сома', sheet:'audit_ref',
+    calc:r=>({num:_expN(r.sum)}), kind:'money', good:'down',
+    why:'Соисполнение шығыны.' },
+];
+
+function _expFmtVal(m, v){
+  if(v===null) return '—';
+  if(m.kind==='pct')   return v.toFixed(1)+'%';
+  if(m.kind==='money') return ayFmt(Math.round(v));
+  return ayFmt(Math.round(v));
+}
+function _expVal(m, row){
+  if(!row) return null;
+  const c=m.calc(row);
+  if(m.kind==='pct'){ if(!c.den) return null; return c.num/c.den*100; }
+  return c.num;
+}
+
+function expMonthlyRender(){
+  const rows={}, per={};
+  ['clin_scr','clin_prof','clin_nosvc','clin_pop','audit_psy','clin_work','audit_ref']
+    .forEach(n=>{ rows[n]=_expSrvRows(n); });
+
+  const allPer=[...new Set([].concat(...Object.values(rows).map(a=>a.map(r=>String(r.period)))))]
+                .filter(Boolean).sort();
+  if(!allPer.length){
+    return `<div class="card"><div style="padding:10px;font-size:13px;color:var(--ink-3)">
+      Серверде сақталған кезең жоқ. Порталға выгрузка жүктеп, бөлімдерді сақтаңыз —
+      содан кейін айлық есеп өзі құрылады.</div></div>`;
+  }
+  const cur=allPer[allPer.length-1], prv=allPer.length>1?allPer[allPer.length-2]:null;
+  const at=(n,p)=>rows[n].filter(r=>String(r.period)===p).pop()||null;
+
+  const up=[], down=[], flat=[], nodata=[];
+  EXP_MET.forEach(m=>{
+    const a=_expVal(m, at(m.sheet,cur));
+    const b=prv?_expVal(m, at(m.sheet,prv)):null;
+    if(a===null){ nodata.push(m); return; }
+    const item={m, now:a, was:b};
+    if(b===null){ flat.push(item); return; }
+    const d=a-b;
+    const eps = m.kind==='pct' ? 0.5 : Math.max(1, Math.abs(b)*0.02);
+    if(Math.abs(d)<eps){ flat.push(item); return; }
+    const better = (m.good==='up') ? d>0 : d<0;
+    (better?up:down).push(item);
+  });
+
+  const card=(title,tone,items,icon)=>{
+    if(!items.length) return '';
+    const C={green:'var(--t-green)',red:'var(--t-red)',gray:'var(--ink-3)'}[tone];
+    const BG={green:'var(--t-green-bg)',red:'var(--t-red-bg)',gray:'transparent'}[tone];
+    const BD={green:'var(--t-green-bd)',red:'var(--t-red-bd)',gray:'var(--line)'}[tone];
+    let h=`<div class="card" style="border-color:${BD};background:${BG}">
+      <div class="card-title" style="color:${C}">${icon} ${title} — ${items.length}</div>`;
+    items.forEach(it=>{
+      const m=it.m;
+      const nowT=_expFmtVal(m,it.now), wasT=it.was===null?'—':_expFmtVal(m,it.was);
+      let delta='';
+      if(it.was!==null){
+        const d=it.now-it.was;
+        const s=d>0?'+':'';
+        delta = m.kind==='pct' ? `${s}${d.toFixed(1)} п.т.` : `${s}${ayFmt(Math.round(d))}`;
+      }
+      h+=`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+          <span style="font-size:13.5px;font-weight:600">${m.name}</span>
+          <span style="font-size:13px;white-space:nowrap">
+            <span style="color:var(--ink-3)">${wasT}</span>
+            <span style="color:var(--ink-3)"> → </span>
+            <strong>${nowT}</strong>
+            ${delta?`<span style="color:${C};margin-left:7px">${delta}</span>`:''}
+          </span>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-3);font-style:italic;margin-top:2px">${m.why}</div>
+      </div>`;
+    });
+    return h+'</div>';
+  };
+
+  let h=`<div class="card" style="border-color:var(--t-blue-bd);background:var(--t-blue-bg)">
+    <div class="card-title">📅 Айлық клиникалық есеп</div>
+    <div style="font-size:14px">
+      Кезең: <strong>${cur}</strong>${prv?` · салыстыру: ${prv}`:' · салыстыруға алдыңғы кезең жоқ'}
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-3);margin-top:5px">
+      Серверде ${allPer.length} кезең сақталған. Дерек жүктеудің қажеті жоқ —
+      есеп серверлік агрегаттан құрылады.
+    </div></div>`;
+
+  h+=card('Жетістік','green',up,'🟢');
+  h+=card('Құлдырау','red',down,'🔴');
+  h+=card('Өзгеріссіз','gray',flat,'⚪');
+
+  if(nodata.length){
+    h+=`<div class="card"><div class="card-title">⚠️ Дерегі жоқ — ${nodata.length}</div>
+      <div style="font-size:12.5px;color:var(--ink-2)">
+        ${nodata.map(m=>m.name).join(' · ')}
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:7px">
+        Бұл көрсеткіштер үшін тиісті бөлімге выгрузка жүктеп, серверге сақтау керек.
+        <strong>Жоқ дерек нөл емес</strong> — сондықтан олар «өзгеріссіз» деп саналмайды.
+      </div></div>`;
+  }
+  return h;
+}
+
 function expCompute(){
   _expRefCache = null;                      // жаңа деректе қайта сканерлеу
   const out=[];
@@ -7217,10 +7454,13 @@ function expRender(){
   const cnt={nurse:0,doctor:0,boss:0};
   all.forEach(f=>{ if(!arch[f.key]) cnt[f.aud]++; });
 
-  const tabs=[['nurse','👩‍⚕️ Мейіргерлерге'],['doctor','🩺 Дәрігерлерге'],['boss','💼 Басшылыққа']];
+  const tabs=[['nurse','👩‍⚕️ Мейіргерлерге'],['doctor','🩺 Дәрігерлерге'],
+              ['boss','💼 Басшылыққа'],['month','📅 Айлық есеп']];
   let h='<div class="lens-bar">'
-    + tabs.map(([k,l])=>`<button type="button" class="lens-btn${EXP.tab===k?' on':''}" onclick="expSetTab('${k}')">${l} (${cnt[k]})</button>`).join('')
+    + tabs.map(([k,l])=>`<button type="button" class="lens-btn${EXP.tab===k?' on':''}" onclick="expSetTab('${k}')">${l}${k==='month'?'':' ('+cnt[k]+')'}</button>`).join('')
     + `<div class="lens-note">Соңғы есептеу: ${EXP.ts?EXP.ts.toLocaleString('ru-RU'):'—'} · «Орындалды» → мұрағат</div></div>`;
+
+  if(EXP.tab==='month'){ box.innerHTML = h + expMonthlyRender(); return; }
 
   const act=all.filter(f=>f.aud===EXP.tab && !arch[f.key]);
   const arc=all.filter(f=>f.aud===EXP.tab &&  arch[f.key]);
@@ -7266,7 +7506,24 @@ function expRender(){
   box.innerHTML=h;
 }
 
-function expRefresh(){ expCompute(); expRender(); }
+function expRefresh(){
+  /* v16.4 — «Жаңарту» ЕШҚАШАН үнсіз қалмауы керек.
+     Бұрын: ережелер қорытынды таппаса, экранда ештеңе өзгермейтін —
+     батырма сынған сияқты көрінетін. Енді нәтижесін өзі айтады. */
+  const before = EXP.findings.length;
+  expCompute();
+  expRender();
+  const arch = expArchLoad();
+  const open = EXP.findings.filter(f=>!arch[f.key]).length;
+  const st = document.getElementById('expFlash');
+  if(st){
+    const srv = (typeof SERVER_DATA!=='undefined' && SERVER_DATA) ? 'сервер қосулы' : 'сервер жоқ';
+    st.innerHTML = `<span style="color:var(--ok)">✅ Қайта есептелді</span>
+      <span style="color:var(--ink-3)"> · ашық қорытынды: <strong>${open}</strong>
+      · барлығы: ${EXP.findings.length} · ${srv}</span>`;
+    setTimeout(()=>{ if(st) st.innerHTML=''; }, 8000);
+  }
+}
 
 
 /* ============================================================
