@@ -670,7 +670,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.5</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.6</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn" id="themeBtn" title="Ашық / күңгірт фон" onclick="ayToggleTheme()">🌙</button>
@@ -7347,31 +7347,66 @@ function _expVal(m, row){
 }
 
 function expMonthlyRender(){
-  const rows={}, per={};
-  ['clin_scr','clin_prof','clin_nosvc','clin_pop','audit_psy','clin_work','audit_ref']
-    .forEach(n=>{ rows[n]=_expSrvRows(n); });
+  const SHEETS=['clin_scr','clin_prof','clin_nosvc','clin_pop','audit_psy','clin_work','audit_ref'];
+  const SHLAB={clin_scr:'Скрининг',clin_prof:'Профилактика',clin_nosvc:'Қызмет алмағандар',
+               clin_pop:'Халық профилі',audit_psy:'Төлем жүйесі',clin_work:'Жүктеме',
+               audit_ref:'Сыртқы бағыттар'};
+  const rows={};
+  SHEETS.forEach(n=>{ rows[n]=_expSrvRows(n); });
 
-  const allPer=[...new Set([].concat(...Object.values(rows).map(a=>a.map(r=>String(r.period)))))]
+  const allPer=[...new Set([].concat(...SHEETS.map(n=>rows[n].map(r=>String(r.period)))))]
                 .filter(Boolean).sort();
   if(!allPer.length){
     return `<div class="card"><div style="padding:10px;font-size:13px;color:var(--ink-3)">
       Серверде сақталған кезең жоқ. Порталға выгрузка жүктеп, бөлімдерді сақтаңыз —
       содан кейін айлық есеп өзі құрылады.</div></div>`;
   }
-  const cur=allPer[allPer.length-1], prv=allPer.length>1?allPer[allPer.length-2]:null;
-  const at=(n,p)=>rows[n].filter(r=>String(r.period)===p).pop()||null;
 
-  /* ⚠️ v16.5 — СЫН КӨРСЕТКІШТЕР ӘРҚАШАН ЖОҒАРЫДА.
-     Бұрын бәрі алдымен үш топқа (жетістік/құлдырау/өзгеріссіз) бөлінетін.
-     Салдары: М4-М5 нашарласа, ол «Құлдырау» тобына түсіп, тоғыз
-     «Жетістік» жолының АСТЫНДА қалатын. Қауіпсіздік көрсеткіші
-     экранның төменінде тұрмауы керек — қай бағытта өзгерсе де. */
+  /* ⚠️ v16.6 — КЕЗЕҢДІ ТАҢДАУ (v16.5-тегі қатенің түзетуі).
+     Бұрын cur = БАРЛЫҚ парақтың кезеңдерінің ең үлкені болатын.
+     Бірақ «Халық профилі» (clin_pop) — АЙЛЫҚ есеп емес, СУРЕТ (снимок):
+     оның кезеңі — выгрузка жасалған күн (aggPop: POP.asOf → әйтпесе бүгін).
+     Салдары: қыркүйекте халық профилін сақтасаң, cur=2026-09 болып,
+     нақты клиникалық деректің соңғы айы (2026-04) есептен түсіп,
+     13 көрсеткіштің 12-сі «Дерегі жоқ» болып шығатын. Дәл солай болды.
+     Түзету: кезең парақ ҚАМТУЫ бойынша таңдалады — қай айда
+     деректің көбі бар, сол ай алынады. */
+  const cov={};
+  allPer.forEach(p=>{ cov[p]=SHEETS.filter(n=>rows[n].some(r=>String(r.period)===p)).length; });
+  const best=Math.max.apply(null,Object.values(cov));
+  const thr=Math.max(2,best-1);
+  let cand=allPer.filter(p=>cov[p]>=thr);
+  if(!cand.length) cand=allPer.slice();
+  const cur=cand[cand.length-1];
+  const newest=allPer[allPer.length-1];
+
+  /* Әр көрсеткіш ӨЗ парағының cur-дан аспайтын соңғы жолын алады,
+     ал салыстыру базасы — сол парақтағы одан алдыңғы жол.
+     Себебі парақтар әр кезде сақталады: біреуі сәуірде, біреуі қыркүйекте.
+     Кезеңі cur-дан өзгеше болса — жолда ашық көрсетіледі. */
+  const resolve=(sheet)=>{
+    /* Әдепкі: cur-дан аспайтын соңғы жол.
+       Ереже: ӘР ПАРАҚ өзінің соңғы ЕКІ жазбасын салыстырады.
+       Неге cur-мен шектемедім: сәуірде барлық выгрузка тұрып, мамырда тек
+       скрининг жүктелсе, cur=сәуір болады да, мамырдағы М4-М5 өсуі
+       ЖАСЫРЫЛАДЫ. Қауіпсіздік көрсеткішін жасыру — ең қымбат қате.
+       Сондықтан ешбір жол тасталмайды, ал кезеңі cur-дан өзгеше болса —
+       жолдың қасында «· кезең: ГГГГ-АА» деп ашық жазылады.
+       Салыстыру ӘРҚАШАН бір парақтың ішінде (сәуір↔наурыз, мамыр↔сәуір). */
+    const a=rows[sheet];
+    if(!a.length) return {row:null,prev:null,per:null,prevPer:null};
+    return {row:a[a.length-1], prev:(a.length>1?a[a.length-2]:null),
+            per:String(a[a.length-1].period),
+            prevPer:(a.length>1?String(a[a.length-2].period):null)};
+  };
+
   const crit=[], up=[], down=[], flat=[], nodata=[];
   EXP_MET.forEach(m=>{
-    const a=_expVal(m, at(m.sheet,cur));
-    const b=prv?_expVal(m, at(m.sheet,prv)):null;
+    const res=resolve(m.sheet);
+    const a=_expVal(m, res.row);
+    const b=_expVal(m, res.prev);
     if(a===null){ nodata.push(m); return; }
-    const item={m, now:a, was:b};
+    const item={m, now:a, was:b, per:res.per, prevPer:res.prevPer};
     let dir='flat';
     if(b!==null){
       const d=a-b;
@@ -7406,9 +7441,12 @@ function expMonthlyRender(){
         delta = m.kind==='pct' ? `${s}${d.toFixed(1)} п.т.` : `${s}${ayFmt(Math.round(d))}`;
       }
       const RC = perRow ? DIRC[it.dir||'flat'] : C;
+      const tag = (it.per && it.per!==cur)
+        ? ` <span style="font-size:10.5px;color:var(--t-amber);margin-left:6px;white-space:nowrap">· кезең: ${it.per}</span>` : '';
+      const base = it.prevPer ? ` (${it.prevPer})` : '';
       h+=`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-          <span style="font-size:13.5px;font-weight:600">${m.name}</span>
+          <span style="font-size:13.5px;font-weight:600">${m.name}${tag}</span>
           <span style="font-size:13px;white-space:nowrap">
             <span style="color:var(--ink-3)">${wasT}</span>
             <span style="color:var(--ink-3)"> → </span>
@@ -7416,20 +7454,32 @@ function expMonthlyRender(){
             ${delta?`<span style="color:${RC};margin-left:7px">${delta}</span>`:''}
           </span>
         </div>
-        <div style="font-size:11.5px;color:var(--ink-3);font-style:italic;margin-top:2px">${m.why}</div>
+        <div style="font-size:11.5px;color:var(--ink-3);font-style:italic;margin-top:2px">${m.why}${it.was!==null?' · салыстыру'+base:''}</div>
       </div>`;
     });
     return h+'</div>';
   };
 
+  const diag=SHEETS.map(n=>{
+    const r=rows[n];
+    const last=r.length?String(r[r.length-1].period):'—';
+    const bad=(last!=='—' && last!==cur);
+    return `<span style="color:${bad?'var(--t-amber)':'var(--ink-3)'}">${SHLAB[n]}: ${last}</span>`;
+  }).join(' · ');
+
   let h=`<div class="card" style="border-color:var(--t-blue-bd);background:var(--t-blue-bg)">
     <div class="card-title">📅 Айлық клиникалық есеп</div>
     <div style="font-size:14px">
-      Кезең: <strong>${cur}</strong>${prv?` · салыстыру: ${prv}`:' · салыстыруға алдыңғы кезең жоқ'}
+      Негізгі кезең: <strong>${cur}</strong>
+      <span style="font-size:12px;color:var(--ink-3)">· деректің көбі осы айда (${cov[cur]}/${SHEETS.length} парақ)</span>
     </div>
-    <div style="font-size:11.5px;color:var(--ink-3);margin-top:5px">
-      Серверде ${allPer.length} кезең сақталған. Дерек жүктеудің қажеті жоқ —
-      есеп серверлік агрегаттан құрылады.
+    ${cur!==newest?`<div style="font-size:12px;color:var(--t-amber);margin-top:5px">
+      ⚠️ Серверде одан кейінгі кезең де бар (${newest}), бірақ онда тек ${cov[newest]} парақ сақталған —
+      сондықтан тақырып кезеңі ретінде ${cur} алынды. Кейінгі айдың дерегі ЖОҒАЛМАЙДЫ:
+      ол өз жолында «· кезең» белгісімен көрсетіледі.</div>`:''}
+    <div style="font-size:11.5px;color:var(--ink-3);margin-top:6px">
+      Әр көрсеткіш өз парағының соңғы екі жазбасымен салыстырылады.
+      Парақтардың соңғы кезеңдері: ${diag}
     </div></div>`;
 
   h+=card('Басты бақылаудағы','crit',crit,'🚨',true);
@@ -7440,10 +7490,10 @@ function expMonthlyRender(){
   if(nodata.length){
     h+=`<div class="card"><div class="card-title">⚠️ Дерегі жоқ — ${nodata.length}</div>
       <div style="font-size:12.5px;color:var(--ink-2)">
-        ${nodata.map(m=>m.name).join(' · ')}
+        ${nodata.map(m=>m.name+' <span style="color:var(--ink-3)">('+SHLAB[m.sheet]+')</span>').join(' · ')}
       </div>
       <div style="font-size:11.5px;color:var(--ink-3);margin-top:7px">
-        Бұл көрсеткіштер үшін тиісті бөлімге выгрузка жүктеп, серверге сақтау керек.
+        Бұл көрсеткіштер үшін жақшадағы бөлімге выгрузка жүктеп, серверге сақтау керек.
         <strong>Жоқ дерек нөл емес</strong> — сондықтан олар «өзгеріссіз» деп саналмайды.
       </div></div>`;
   }
