@@ -670,7 +670,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <div class="brand-mark">А</div>
-      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.4</small></div>
+      <div class="brand-text"><strong>«Аян» ЕСО</strong><small>Басқару порталы · v16.5</small></div>
     </div>
     <div class="top-actions">
       <button class="icon-btn" id="themeBtn" title="Ашық / күңгірт фон" onclick="ayToggleTheme()">🌙</button>
@@ -7292,10 +7292,10 @@ const EXP_RULES = [
    Экономикалық көрсеткіштер соңында — олар «Басшылыққа» табында бар.
    ============================================================ */
 const EXP_MET = [
-  { id:'conv',  name:'Анықталды → Д-есепке алынды', sheet:'clin_scr',
+  { id:'conv',  name:'Анықталды → Д-есепке алынды', sheet:'clin_scr', crit:true,
     calc:r=>({num:_expN(r.tod), den:_expN(r.detect)}), kind:'pct', good:'up',
     why:'Скринингтің мәні — табу емес, табылғанды бақылауға алу.' },
-  { id:'m45',   name:'М4–М5 биопсиясыз', sheet:'clin_scr',
+  { id:'m45',   name:'М4–М5 биопсиясыз', sheet:'clin_scr', crit:true,
     calc:r=>({num:_expN(r.m45nb)}), kind:'abs', good:'down',
     why:'Қатерлі ісікке күдік. Нөл болуы тиіс.' },
   { id:'scrdone',name:'Скрининг аяқтау деңгейі', sheet:'clin_scr',
@@ -7361,25 +7361,39 @@ function expMonthlyRender(){
   const cur=allPer[allPer.length-1], prv=allPer.length>1?allPer[allPer.length-2]:null;
   const at=(n,p)=>rows[n].filter(r=>String(r.period)===p).pop()||null;
 
-  const up=[], down=[], flat=[], nodata=[];
+  /* ⚠️ v16.5 — СЫН КӨРСЕТКІШТЕР ӘРҚАШАН ЖОҒАРЫДА.
+     Бұрын бәрі алдымен үш топқа (жетістік/құлдырау/өзгеріссіз) бөлінетін.
+     Салдары: М4-М5 нашарласа, ол «Құлдырау» тобына түсіп, тоғыз
+     «Жетістік» жолының АСТЫНДА қалатын. Қауіпсіздік көрсеткіші
+     экранның төменінде тұрмауы керек — қай бағытта өзгерсе де. */
+  const crit=[], up=[], down=[], flat=[], nodata=[];
   EXP_MET.forEach(m=>{
     const a=_expVal(m, at(m.sheet,cur));
     const b=prv?_expVal(m, at(m.sheet,prv)):null;
     if(a===null){ nodata.push(m); return; }
     const item={m, now:a, was:b};
-    if(b===null){ flat.push(item); return; }
-    const d=a-b;
-    const eps = m.kind==='pct' ? 0.5 : Math.max(1, Math.abs(b)*0.02);
-    if(Math.abs(d)<eps){ flat.push(item); return; }
-    const better = (m.good==='up') ? d>0 : d<0;
-    (better?up:down).push(item);
+    let dir='flat';
+    if(b!==null){
+      const d=a-b;
+      const eps = m.kind==='pct' ? 0.5 : Math.max(1, Math.abs(b)*0.02);
+      if(Math.abs(d)>=eps) dir = ((m.good==='up') ? d>0 : d<0) ? 'up' : 'down';
+    }
+    item.dir=dir;
+    if(m.crit){ crit.push(item); return; }      // сын — топқа бөлінбейді
+    if(dir==='up') up.push(item);
+    else if(dir==='down') down.push(item);
+    else flat.push(item);
   });
 
-  const card=(title,tone,items,icon)=>{
+  const DIRC={up:'var(--t-green)',down:'var(--t-red)',flat:'var(--ink-3)'};
+  const card=(title,tone,items,icon,perRow)=>{
     if(!items.length) return '';
-    const C={green:'var(--t-green)',red:'var(--t-red)',gray:'var(--ink-3)'}[tone];
-    const BG={green:'var(--t-green-bg)',red:'var(--t-red-bg)',gray:'transparent'}[tone];
-    const BD={green:'var(--t-green-bd)',red:'var(--t-red-bd)',gray:'var(--line)'}[tone];
+    const C={green:'var(--t-green)',red:'var(--t-red)',gray:'var(--ink-3)',
+             crit:'var(--t-amber)'}[tone];
+    const BG={green:'var(--t-green-bg)',red:'var(--t-red-bg)',gray:'transparent',
+              crit:'var(--t-amber-bg)'}[tone];
+    const BD={green:'var(--t-green-bd)',red:'var(--t-red-bd)',gray:'var(--line)',
+              crit:'var(--t-amber-bd)'}[tone];
     let h=`<div class="card" style="border-color:${BD};background:${BG}">
       <div class="card-title" style="color:${C}">${icon} ${title} — ${items.length}</div>`;
     items.forEach(it=>{
@@ -7391,6 +7405,7 @@ function expMonthlyRender(){
         const s=d>0?'+':'';
         delta = m.kind==='pct' ? `${s}${d.toFixed(1)} п.т.` : `${s}${ayFmt(Math.round(d))}`;
       }
+      const RC = perRow ? DIRC[it.dir||'flat'] : C;
       h+=`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
           <span style="font-size:13.5px;font-weight:600">${m.name}</span>
@@ -7398,7 +7413,7 @@ function expMonthlyRender(){
             <span style="color:var(--ink-3)">${wasT}</span>
             <span style="color:var(--ink-3)"> → </span>
             <strong>${nowT}</strong>
-            ${delta?`<span style="color:${C};margin-left:7px">${delta}</span>`:''}
+            ${delta?`<span style="color:${RC};margin-left:7px">${delta}</span>`:''}
           </span>
         </div>
         <div style="font-size:11.5px;color:var(--ink-3);font-style:italic;margin-top:2px">${m.why}</div>
@@ -7417,6 +7432,7 @@ function expMonthlyRender(){
       есеп серверлік агрегаттан құрылады.
     </div></div>`;
 
+  h+=card('Басты бақылаудағы','crit',crit,'🚨',true);
   h+=card('Жетістік','green',up,'🟢');
   h+=card('Құлдырау','red',down,'🔴');
   h+=card('Өзгеріссіз','gray',flat,'⚪');
